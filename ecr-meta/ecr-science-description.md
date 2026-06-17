@@ -3,7 +3,7 @@
 ## Science
 
 Real-time object detection and counting from camera sensors is foundational
-to urban analytics, wildlife monitoring, traffic engineering, and
+to agriculture analytics, wildlife monitoring, traffic engineering, and
 infrastructure management.  Traditional approaches require streaming raw
 video to the cloud for post-hoc analysis — incurring high bandwidth costs,
 latency, and privacy concerns.  By deploying state-of-the-art YOLO
