@@ -1,0 +1,279 @@
+{
+  "test_images_dir": "/home/beckman/AI-projects/Sage-agents/plugins/yolo-object-counter/tests/test-images",
+  "image_count": 34,
+  "images": [
+    "test-image001.jpg",
+    "test-image002.jpg",
+    "test-image003.jpg",
+    "test-image004.jpg",
+    "test-image005.jpg",
+    "test-image006.jpg",
+    "test-image007.jpg",
+    "test-image008.jpg",
+    "test-image009.jpg",
+    "test-image010.jpg",
+    "test-image011.jpg",
+    "test-image012.jpg",
+    "test-image013.jpg",
+    "test-image014.jpg",
+    "test-image015.jpg",
+    "test-image016.jpg",
+    "test-image017.jpg",
+    "test-image018.jpg",
+    "test-image019.jpg",
+    "test-image020.jpg",
+    "test-image021.jpg",
+    "test-image022.jpg",
+    "test-image023.jpg",
+    "test-image024.jpg",
+    "test-image025.jpg",
+    "test-image026.jpg",
+    "test-image027.jpg",
+    "test-image028.jpg",
+    "test-image029.jpg",
+    "test-image030.jpg",
+    "test-image031.jpg",
+    "test-image032.jpg",
+    "test-image033.jpg",
+    "test-image034.jpg"
+  ],
+  "confidence_threshold": 0.25,
+  "iou_threshold": 0.45,
+  "classes_filter": "all",
+  "results": [
+    {
+      "image": "test-image002.jpg",
+      "class_counts": {
+        "person": 11,
+        "clock": 2,
+        "backpack": 2
+      },
+      "total_detections": 15,
+      "uploaded": true
+    },
+    {
+      "image": "test-image004.jpg",
+      "class_counts": {
+        "person": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image005.jpg",
+      "class_counts": {
+        "carrot": 6
+      },
+      "total_detections": 6,
+      "uploaded": true
+    },
+    {
+      "image": "test-image007.jpg",
+      "class_counts": {
+        "dog": 1,
+        "bench": 1
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image008.jpg",
+      "class_counts": {
+        "truck": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image009.jpg",
+      "class_counts": {
+        "bottle": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image011.jpg",
+      "class_counts": {
+        "banana": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image012.jpg",
+      "class_counts": {
+        "carrot": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image013.jpg",
+      "class_counts": {
+        "donut": 1,
+        "dining_table": 1
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image015.jpg",
+      "class_counts": {
+        "bird": 2
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image016.jpg",
+      "class_counts": {
+        "traffic_light": 10,
+        "car": 1
+      },
+      "total_detections": 11,
+      "uploaded": true
+    },
+    {
+      "image": "test-image017.jpg",
+      "class_counts": {
+        "car": 6,
+        "bench": 3
+      },
+      "total_detections": 9,
+      "uploaded": true
+    },
+    {
+      "image": "test-image019.jpg",
+      "class_counts": {
+        "oven": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image020.jpg",
+      "class_counts": {
+        "truck": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image021.jpg",
+      "class_counts": {
+        "traffic_light": 4
+      },
+      "total_detections": 4,
+      "uploaded": true
+    },
+    {
+      "image": "test-image023.jpg",
+      "class_counts": {
+        "person": 6,
+        "car": 3,
+        "fire_hydrant": 1,
+        "umbrella": 1,
+        "stop_sign": 1
+      },
+      "total_detections": 12,
+      "uploaded": true
+    },
+    {
+      "image": "test-image025.jpg",
+      "class_counts": {
+        "bird": 1,
+        "vase": 1
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image026.jpg",
+      "class_counts": {
+        "bird": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image027.jpg",
+      "class_counts": {
+        "person": 2,
+        "boat": 1,
+        "bottle": 1
+      },
+      "total_detections": 4,
+      "uploaded": true
+    },
+    {
+      "image": "test-image028.jpg",
+      "class_counts": {
+        "truck": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image031.jpg",
+      "class_counts": {
+        "sheep": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    },
+    {
+      "image": "test-image032.jpg",
+      "class_counts": {
+        "cow": 2
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image033.jpg",
+      "class_counts": {
+        "cow": 2
+      },
+      "total_detections": 2,
+      "uploaded": true
+    },
+    {
+      "image": "test-image034.jpg",
+      "class_counts": {
+        "sheep": 1
+      },
+      "total_detections": 1,
+      "uploaded": true
+    }
+  ],
+  "total_detections": 84,
+  "unique_classes": [
+    "backpack",
+    "banana",
+    "bench",
+    "bird",
+    "boat",
+    "bottle",
+    "car",
+    "carrot",
+    "clock",
+    "cow",
+    "dining_table",
+    "dog",
+    "donut",
+    "fire_hydrant",
+    "oven",
+    "person",
+    "sheep",
+    "stop_sign",
+    "traffic_light",
+    "truck",
+    "umbrella",
+    "vase"
+  ],
+  "inference_time_s": 8.77,
+  "ndjson_records": 95,
+  "uploads": 34,
+  "passed": true
+}

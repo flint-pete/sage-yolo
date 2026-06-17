@@ -1,0 +1,14 @@
+Object Detection
+Object Counting
+YOLO
+YOLOv11
+Computer Vision
+Machine Learning
+Deep Learning
+Edge Computing
+Urban Analytics
+Wildlife Monitoring
+Traffic Monitoring
+Real-time Inference
+Camera
+Neural Networks
