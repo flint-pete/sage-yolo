@@ -1,0 +1,244 @@
+# Building and Testing the YOLO Plugin Docker Image
+
+How to build the Docker image, test it locally, and deploy it to
+a Sage node.
+
+
+## Prerequisites
+
+- A build machine with internet access, Docker, and an NVIDIA GPU
+- SSH access to a Sage Thor node (for on-node testing)
+- NVIDIA Container Toolkit configured for Docker (see below)
+
+### NVIDIA Container Toolkit Setup
+
+Docker needs the NVIDIA Container Toolkit to pass GPUs into
+containers. The toolkit may already be **installed** but not
+**configured** — both steps are required.
+
+**Check if it's already working:**
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu24.04 nvidia-smi
+```
+
+If that prints your GPU info, you're set. If it fails:
+
+```bash
+# Step 1: Install (if not already)
+# https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+
+# Step 2: Configure Docker to use the nvidia runtime
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Step 3: Verify
+docker info | grep -i runtime
+#  Runtimes: runc io.containerd.runc.v2 nvidia   ← nvidia must appear
+```
+
+This is a one-time setup per machine.
+
+
+## Base Image
+
+The Dockerfile uses `nvcr.io/nvidia/pytorch:25.04-py3`:
+
+| Component | Version |
+|-----------|---------|
+| CUDA | 12.9 |
+| PyTorch | 2.7 |
+| Python | 3.12 |
+| Ubuntu | 24.04 |
+| Min driver | R575+ |
+
+This image supports Blackwell GPUs (sm_120/sm_121) natively.
+Both DGX Spark (GB10) and Thor nodes (NVIDIA Thor) are Blackwell.
+
+
+## Building the Image
+
+### Option A: Build on a Machine with Internet (DGX Spark)
+
+```bash
+cd ~/sage-yolo
+docker build --no-cache -t yolo-object-counter:0.2.0 .
+```
+
+Then transfer to Thor (see "Transfer to Thor" below).
+
+### Option B: Build Directly on Thor
+
+If the Thor node has outbound internet access, you can clone
+and build directly — no transfer step needed:
+
+```bash
+# One-time setup
+git clone https://github.com/flint-pete/sage-yolo.git ~/sage-yolo
+
+# Build (sudo required for Docker on Thor)
+cd ~/sage-yolo
+sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+```
+
+To rebuild after code changes:
+
+```bash
+cd ~/sage-yolo
+git pull
+sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+```
+
+This is the fastest iteration loop — edit code, `git push` from
+your dev machine, `git pull && sudo docker build` on Thor.
+
+Build time: ~5 minutes (the YOLO model is downloaded during build).
+
+### Dockerfile: OpenCV Fix
+
+The Dockerfile includes this fix to use `opencv-python-headless`
+(no GUI) instead of the base image's `opencv-python`:
+
+```dockerfile
+RUN pip uninstall -y opencv-python opencv-python-headless 2>/dev/null; \
+    rm -rf /usr/local/lib/python3.*/dist-packages/cv2* && \
+    pip install --no-cache-dir opencv-python-headless>=4.8.0
+```
+
+The `rm -rf cv2*` clears stale files that `pip uninstall`
+sometimes leaves behind.
+
+
+## Testing the Image Locally
+
+Before deploying, verify the image works with GPU:
+
+### Quick sanity check
+
+```bash
+# Verify the image exists and app.py runs
+sudo docker run --rm --gpus all yolo-object-counter:0.2.0 --help
+```
+
+### Batch test with test images
+
+Run against the committed test images — same as the QA test,
+but inside Docker:
+
+```bash
+mkdir -p ~/yolo-test-output
+
+sudo docker run --rm --gpus all \
+    -e PYWAGGLE_LOG_DIR=/output \
+    -v ~/yolo-test-output:/output \
+    -v ~/sage-yolo/tests/test-images:/images:ro \
+    yolo-object-counter:0.2.0 \
+    --image-dir /images --continuous N
+
+# Check results
+cat ~/yolo-test-output/data.ndjson | python3 -m json.tool
+ls -la ~/yolo-test-output/uploads/
+```
+
+### Test with an RTSP camera (e.g. Reolink)
+
+```bash
+mkdir -p ~/yolo-camera-test
+
+sudo docker run --rm --gpus all \
+    -e PYWAGGLE_LOG_DIR=/output \
+    -v ~/yolo-camera-test:/output \
+    yolo-object-counter:0.2.0 \
+    --stream "rtsp://admin:PASSWORD@CAMERA_IP:554/h264Preview_01_sub" \
+    --interval 30 --continuous Y
+
+# In another terminal, watch results:
+tail -f ~/yolo-camera-test/data.ndjson
+ls -la ~/yolo-camera-test/uploads/
+```
+
+Use the sub stream (`h264Preview_01_sub`, 640x360) rather than
+the main stream — YOLO resizes to 640px anyway, so 4K frames
+waste bandwidth.
+
+Press Ctrl-C to stop.
+
+
+## Transfer to Thor (Option A only)
+
+If you built on DGX Spark (not on Thor), transfer the image:
+
+```bash
+# On the build machine
+docker save yolo-object-counter:0.2.0 | gzip > /tmp/yolo-object-counter.tar.gz
+scp /tmp/yolo-object-counter.tar.gz beckman@thor-node:~/
+
+# On Thor — load into Docker
+sudo docker load < ~/yolo-object-counter.tar.gz
+```
+
+
+## Deploy via pluginctl (Sage Workflow)
+
+For testing with the Sage infrastructure on a Thor node:
+
+```bash
+ssh beckman@thor-node
+
+# If the image was transferred (not built locally):
+sudo k3s ctr images import ~/yolo-object-counter.tar.gz
+
+# Deploy
+sudo pluginctl deploy -n yolo-counter \
+    docker.io/library/yolo-object-counter:0.2.0 \
+    -- --stream bottom_camera --interval 30 --continuous Y
+
+# Check status and logs
+sudo pluginctl ps
+pluginctl logs -f yolo-counter
+
+# Stop
+sudo pluginctl rm yolo-counter
+```
+
+
+## Publish to Sage ECR (Production)
+
+The Sage Edge Code Repository (ECR) is **not** a Docker registry.
+You do not `docker push`. ECR pulls from GitHub and builds for you.
+
+1. Go to https://portal.sagecontinuum.org
+2. Sign in → My Apps → Create App
+3. Enter: `https://github.com/flint-pete/sage-yolo`
+4. ECR builds the image and assigns a registry tag:
+   `registry.sagecontinuum.org/flint-pete/yolo-object-counter:0.2.0`
+
+See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
+
+
+## Troubleshooting
+
+**"unknown or invalid runtime name: nvidia"**
+  → NVIDIA Container Toolkit not configured. Run:
+  ```
+  sudo nvidia-ctk runtime configure --runtime=docker
+  sudo systemctl restart docker
+  ```
+
+**"No CUDA GPUs are available" inside container**
+  → Missing `--gpus all` flag on docker run.
+
+**numpy.core.multiarray failed to import**
+  → OpenCV fix didn't run. Rebuild with `--no-cache`.
+
+**"permission denied" on docker commands (Thor)**
+  → Use `sudo docker ...` — Thor's Docker socket is root-only.
+
+**Image too large to transfer**
+  → The image is ~8-10 GB compressed. Use a fast network, or
+  build directly on Thor (Option B) to skip the transfer entirely.
+
+**RTSP stream timeout or black frames**
+  → Verify the camera is reachable: `ffprobe rtsp://admin:PASS@IP:554/...`
+  → Check firewall rules between the container and camera network.
+  → Try the sub stream instead of main stream.
