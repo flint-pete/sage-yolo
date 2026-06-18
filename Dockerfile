@@ -21,8 +21,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     TORCH_VER=$(python3 -c "import torch; print(torch.__version__)") && \
     TV_VER=$(python3 -c "import torchvision; print(torchvision.__version__)") && \
-    echo "Freezing base-image PyTorch stack: torch==${TORCH_VER} torchvision==${TV_VER}" && \
-    printf "torch==${TORCH_VER}\ntorchvision==${TV_VER}\n" > /tmp/constraints.txt && \
+    NP_VER=$(python3 -c "import numpy; print(numpy.__version__)") && \
+    echo "Freezing base-image stack: torch==${TORCH_VER} torchvision==${TV_VER} numpy==${NP_VER}" && \
+    printf "torch==${TORCH_VER}\ntorchvision==${TV_VER}\nnumpy==${NP_VER}\n" > /tmp/constraints.txt && \
     pip install --no-cache-dir -c /tmp/constraints.txt -r requirements.txt
 
 # The NVIDIA base image may ship an opencv compiled against a different numpy.
