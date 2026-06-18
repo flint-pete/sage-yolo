@@ -327,7 +327,8 @@ Examples:
                     plugin.upload_file(tmp_path, timestamp=timestamp,
                                        meta={"camera": source_name,
                                              "detections": str(len(detections))})
-                    os.unlink(tmp_path)
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
                     logger.info("Uploaded annotated image (%d detections)", len(detections))
 
                 if not detections:
