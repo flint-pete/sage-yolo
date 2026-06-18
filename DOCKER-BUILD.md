@@ -168,6 +168,39 @@ waste bandwidth.
 
 Press Ctrl-C to stop.
 
+### Test with an HTTP snapshot camera
+
+For cameras behind a port-mapped router (e.g. Reolink with
+only HTTP port forwarded, no RTSP):
+
+```bash
+mkdir -p ~/yolo-camera-test
+
+# One-shot test (--continuous N)
+sudo docker run --rm --runtime=nvidia \
+    -e PYWAGGLE_LOG_DIR=/output \
+    -v ~/yolo-camera-test:/output \
+    yolo-object-counter:0.2.0 \
+    --snapshot-url "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=USER&password=PASS&width=640&height=360" \
+    --continuous N
+
+# Check results
+cat ~/yolo-camera-test/data.ndjson
+ls -la ~/yolo-camera-test/uploads/
+```
+
+The `&width=640&height=360` parameters request a low-resolution
+snapshot (~12KB vs ~445KB at full 4K). This saves significant
+bandwidth on LTE-connected cameras while giving YOLO exactly
+the resolution it needs (it resizes to 640px anyway).
+
+To verify the camera is reachable before running YOLO:
+
+```bash
+curl -o /tmp/test.jpg "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=test&user=USER&password=PASS"
+file /tmp/test.jpg   # Should say "JPEG image data"
+```
+
 
 ## Transfer to Thor (Option A only)
 
@@ -185,25 +218,100 @@ sudo docker load < ~/yolo-object-counter.tar.gz
 
 ## Deploy via pluginctl (Sage Workflow)
 
-For testing with the Sage infrastructure on a Thor node:
+For running on a Thor node with the Sage infrastructure:
+
+### Step 1: Import the image into k3s
+
+pluginctl uses k3s/containerd, not Docker. The image must be
+imported even if it was built locally with Docker:
 
 ```bash
-ssh beckman@thor-node
+sudo docker save yolo-object-counter:0.2.0 | sudo k3s ctr images import -
+```
 
-# If the image was transferred (not built locally):
-sudo k3s ctr images import ~/yolo-object-counter.tar.gz
+This takes ~6 minutes for the full image. Verify:
 
-# Deploy
-sudo pluginctl deploy -n yolo-counter \
+```bash
+sudo k3s ctr images ls | grep yolo
+```
+
+### Step 2: Deploy
+
+**With an RTSP camera (named or URL):**
+
+```bash
+sudo pluginctl deploy -n yolo-hummingcam \
+    --resource 'memory=8Gi,limit.memory=16Gi' \
     docker.io/library/yolo-object-counter:0.2.0 \
-    -- --stream bottom_camera --interval 30 --continuous Y
+    -- --stream bottom_camera --interval 60 --continuous Y
+```
 
-# Check status and logs
+**With an HTTP snapshot camera (e.g. Reolink via port-mapped router):**
+
+```bash
+sudo pluginctl deploy -n yolo-hummingcam \
+    --resource 'memory=8Gi,limit.memory=16Gi' \
+    docker.io/library/yolo-object-counter:0.2.0 \
+    -- --snapshot-url "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=USER&password=PASS&width=640&height=360" \
+       --interval 60 --continuous Y --upload-image Y
+```
+
+The `&width=640&height=360` fetches the sub-stream resolution
+(~12KB vs ~445KB at 4K) — YOLO resizes to 640px anyway.
+Critical for LTE-connected cameras.
+
+**Important:** The `--resource 'memory=8Gi,limit.memory=16Gi'`
+flag is required. Without it, the default k3s memory limit is
+too low for YOLO11x and the pod gets OOMKilled (exit code 137).
+
+### Step 3: Monitor
+
+```bash
+# Check the pod is running
 sudo pluginctl ps
-pluginctl logs -f yolo-counter
 
-# Stop
-sudo pluginctl rm yolo-counter
+# Watch logs (live inference output)
+sudo pluginctl logs yolo-hummingcam
+
+# Follow logs continuously (Ctrl-C to stop watching)
+sudo pluginctl logs -f yolo-hummingcam
+
+# Check pod status (Running, Failed, etc.)
+sudo kubectl get pod yolo-hummingcam
+```
+
+Note: `pluginctl logs` requires `sudo` on Thor (k3s kubeconfig
+is root-only). If the pod shows `Failed`, check for OOMKilled:
+
+```bash
+sudo kubectl get pod yolo-hummingcam -o jsonpath='{.status.containerStatuses[0].state}' && echo ''
+```
+
+### Step 4: Stop
+
+```bash
+sudo pluginctl rm yolo-hummingcam
+```
+
+### Step 5: Rebuild and redeploy (after code changes)
+
+```bash
+cd ~/sage-yolo
+git pull
+sudo docker build -t yolo-object-counter:0.2.0 .
+
+# If only app.py changed, skip --no-cache (uses cached layers, ~5 seconds)
+# If Dockerfile or requirements.txt changed, use --no-cache
+
+# Re-import into k3s
+sudo docker save yolo-object-counter:0.2.0 | sudo k3s ctr images import -
+
+# Remove old deployment and redeploy
+sudo pluginctl rm yolo-hummingcam
+sudo pluginctl deploy -n yolo-hummingcam \
+    --resource 'memory=8Gi,limit.memory=16Gi' \
+    docker.io/library/yolo-object-counter:0.2.0 \
+    -- --snapshot-url "..." --interval 60 --continuous Y --upload-image Y
 ```
 
 
@@ -247,3 +355,18 @@ See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
   → Verify the camera is reachable: `ffprobe rtsp://admin:PASS@IP:554/...`
   → Check firewall rules between the container and camera network.
   → Try the sub stream instead of main stream.
+
+**OOMKilled (exit code 137) via pluginctl**
+  → Default k3s memory limits are too low for YOLO11x (~4-5GB GPU
+  + several GB system memory). Add `--resource 'memory=8Gi,limit.memory=16Gi'`
+  to the `pluginctl deploy` command.
+
+**HTTP snapshot returns HTML instead of JPEG**
+  → The URL path is wrong. For Reolink cameras, the snapshot
+  endpoint is `/cgi-bin/api.cgi?cmd=Snap&channel=0&...`, not `/`.
+  Check credentials and verify with curl first:
+  `curl -o test.jpg "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=test&user=USER&password=PASS"`
+
+**pluginctl logs says "image can't be pulled"**
+  → The image exists in Docker but not in k3s containerd.
+  Import it: `sudo docker save IMAGE | sudo k3s ctr images import -`
