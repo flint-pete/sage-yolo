@@ -297,7 +297,7 @@ Examples:
                 for det in detections:
                     counts[det["class"]] = counts.get(det["class"], 0) + 1
 
-                # Publish counts
+                # Publish per-class counts
                 for cls_name, count in counts.items():
                     # Sanitize class name for pywaggle topic (a-z0-9_ only)
                     safe_name = cls_name.replace(" ", "_").replace("-", "_")
@@ -309,12 +309,25 @@ Examples:
                     )
                     logger.info("Published %s = %d", topic, count)
 
-                # Publish total
+                # Build a self-describing classes summary for the total record.
+                # Format: "bottle:2,person:1" — all classes and counts in one field
+                # so you can read a single record without cross-referencing.
+                classes_summary = ",".join(
+                    f"{c}:{n}" for c, n in sorted(counts.items())
+                )
+                total = sum(counts.values())
+
+                # Publish total (includes full class breakdown in meta)
                 plugin.publish(
                     "env.count.total",
-                    sum(counts.values()),
+                    total,
                     timestamp=timestamp,
-                    meta={"camera": source_name, "model": args.model},
+                    meta={
+                        "camera": source_name,
+                        "model": args.model,
+                        "classes": classes_summary if classes_summary else "none",
+                        "num_classes": str(len(counts)),
+                    },
                 )
 
                 # Upload annotated image
