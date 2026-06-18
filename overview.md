@@ -402,7 +402,7 @@ your GitHub repo — you do not `docker push` directly):
 ```bash
 # Build and test locally first:
 docker build --no-cache -t yolo-object-counter:0.2.0 .
-docker run --rm --gpus all -e PYWAGGLE_LOG_DIR=/tmp/out \
+docker run --rm --runtime=nvidia -e PYWAGGLE_LOG_DIR=/tmp/out \
     yolo-object-counter:0.2.0 --stream bottom_camera --continuous N
 ```
 

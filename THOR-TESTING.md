@@ -17,7 +17,7 @@ sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
 
 # Run against test images
 mkdir -p ~/yolo-test-output
-sudo docker run --rm --gpus all \
+sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-test-output:/output \
     -v ~/sage-yolo/tests/test-images:/images:ro \
@@ -49,7 +49,7 @@ pass the RTSP URL directly to `--stream`:
 ```bash
 mkdir -p ~/yolo-camera-test
 
-sudo docker run --rm --gpus all \
+sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-camera-test:/output \
     yolo-object-counter:0.2.0 \
@@ -158,7 +158,7 @@ rm -rf ~/sage-yolo
   → Use `sudo docker ...` — Thor's Docker socket is root-only.
 
 **"No CUDA GPUs are available"**
-  → Missing `--gpus all` on the docker run command.
+  → Missing `--runtime=nvidia` on the docker run command.
 
 **RTSP stream timeout or black frames**
   → Verify camera reachability: `ffprobe rtsp://admin:PASS@IP:554/...`
@@ -168,4 +168,4 @@ rm -rf ~/sage-yolo
 **torch.cuda.is_available() returns False (direct execution)**
   → Your user is not in the `video` group. `/dev/nvmap` is owned
   by `root:video`. Use Docker instead (containers get GPU access
-  automatically via `--gpus all`).
+  automatically via `--runtime=nvidia`).

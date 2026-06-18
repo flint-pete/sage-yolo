@@ -19,7 +19,7 @@ containers. The toolkit may already be **installed** but not
 **Check if it's already working:**
 
 ```bash
-docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu24.04 nvidia-smi
+docker run --rm --runtime=nvidia nvidia/cuda:12.9.0-base-ubuntu24.04 nvidia-smi
 ```
 
 If that prints your GPU info, you're set. If it fails:
@@ -117,7 +117,7 @@ Before deploying, verify the image works with GPU:
 
 ```bash
 # Verify the image exists and app.py runs
-sudo docker run --rm --gpus all yolo-object-counter:0.2.0 --help
+sudo docker run --rm --runtime=nvidia yolo-object-counter:0.2.0 --help
 ```
 
 ### Batch test with test images
@@ -128,7 +128,7 @@ but inside Docker:
 ```bash
 mkdir -p ~/yolo-test-output
 
-sudo docker run --rm --gpus all \
+sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-test-output:/output \
     -v ~/sage-yolo/tests/test-images:/images:ro \
@@ -145,7 +145,7 @@ ls -la ~/yolo-test-output/uploads/
 ```bash
 mkdir -p ~/yolo-camera-test
 
-sudo docker run --rm --gpus all \
+sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-camera-test:/output \
     yolo-object-counter:0.2.0 \
@@ -226,7 +226,7 @@ See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
   ```
 
 **"No CUDA GPUs are available" inside container**
-  → Missing `--gpus all` flag on docker run.
+  → Missing `--runtime=nvidia` flag on docker run.
 
 **numpy.core.multiarray failed to import**
   → OpenCV fix didn't run. Rebuild with `--no-cache`.
