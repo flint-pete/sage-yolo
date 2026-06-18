@@ -2,16 +2,16 @@
 # Default model: YOLO11x (54.7% mAP COCO, 56.9M params)
 # Target: 128GB unified memory ARM64 (DGX Spark / Sage Thor)
 #
-# Base image: NVIDIA PyTorch 25.04 — CUDA 12.9, PyTorch 2.7, Python 3.12
+# Base image: NVIDIA PyTorch 25.08 — CUDA 13.0, PyTorch 2.8, Python 3.12
 # Supports Blackwell GPUs (sm_120/sm_121) natively. Requires driver R575+.
 # Previous base (24.06-py3) only supported up to sm_90 (Hopper).
-FROM nvcr.io/nvidia/pytorch:25.04-py3
+FROM nvcr.io/nvidia/pytorch:25.08-py3
 
 WORKDIR /app
 COPY requirements.txt .
 
-# CRITICAL: The NVIDIA base image ships PyTorch 2.7 compiled with CUDA 12.9
-# and Blackwell GPU support (sm_120/sm_121).  pip install ultralytics will
+# CRITICAL: The NVIDIA base image ships PyTorch 2.8 compiled with CUDA 13.0
+# and Blackwell GPU support (sm_110 Thor, sm_120/sm_121 DGX Spark).  pip install ultralytics will
 # try to pull in its own torch/torchvision from PyPI, which overwrites the
 # base image's torch with a generic build that LACKS Blackwell kernels —
 # causing "unable to find an engine to execute this computation" at runtime.

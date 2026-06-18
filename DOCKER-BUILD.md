@@ -42,18 +42,23 @@ This is a one-time setup per machine.
 
 ## Base Image
 
-The Dockerfile uses `nvcr.io/nvidia/pytorch:25.04-py3`:
+The Dockerfile uses `nvcr.io/nvidia/pytorch:25.08-py3`:
 
 | Component | Version |
 |-----------|---------|
-| CUDA | 12.9 |
-| PyTorch | 2.7 |
+| CUDA | 13.0 |
+| PyTorch | 2.8 |
 | Python | 3.12 |
 | Ubuntu | 24.04 |
 | Min driver | R575+ |
 
-This image supports Blackwell GPUs (sm_120/sm_121) natively.
-Both DGX Spark (GB10) and Thor nodes (NVIDIA Thor) are Blackwell.
+This image supports both Blackwell GPU variants natively:
+- **DGX Spark** (GB10, sm_121)
+- **Thor nodes** (NVIDIA Thor / Jetson Thor, sm_110)
+
+Previous base image (25.04-py3, CUDA 12.9) lacked sm_110 cubins
+and would fail on Thor with "CUDA capability sm_110 is not
+compatible" warnings.
 
 
 ## Building the Image
