@@ -315,16 +315,128 @@ sudo pluginctl deploy -n yolo-hummingcam \
 ```
 
 
-## Publish to Sage ECR (Production)
+## Production: Scheduled SES Cron Jobs on Thor (arm64)
 
-The Sage Edge Code Repository (ECR) is **not** a Docker registry.
-You do not `docker push`. ECR pulls from GitHub and builds for you.
+This is the production deployment path — a scheduler-managed one-shot
+cron job (every 10 min) instead of a hand-deployed continuous pod. It
+replaces the `pluginctl deploy ... --continuous Y` approach above, which
+pins the GPU/RAM 24/7, dies on reboot, and is invisible to the scheduler.
 
-1. Go to https://portal.sagecontinuum.org
-2. Sign in → My Apps → Create App
-3. Enter: `https://github.com/flint-pete/sage-yolo`
-4. ECR builds the image and assigns a registry tag:
-   `registry.sagecontinuum.org/flint-pete/yolo-object-counter:0.2.0`
+### Why the normal ECR portal build does NOT work for this plugin
+
+The documented Sage workflow is "Create App → Register and Build App" and
+the ECR portal builds the image from your GitHub repo. **That build fails
+for any arm64 plugin on the NVIDIA base image**, and here is why:
+
+- The ECR/Jenkins build pipeline runs on **x86_64** hardware.
+- To produce a `linux/arm64` image it cross-builds under **QEMU emulation**.
+- The NVIDIA base (`nvcr.io/nvidia/pytorch:25.08-py3`) contains aarch64
+  binaries that QEMU cannot emulate; the `pip install` step crashes with
+  `qemu: uncaught target signal 6 (Aborted) - core dumped`, build exit 134.
+
+So the portal build is a dead end for Thor-targeted NVIDIA plugins until
+the ECR pipeline gets a **native arm64 builder**.
+
+### Why `docker push` to the registry also does NOT work (yet)
+
+You might think: build natively on Thor (arm64, no QEMU), then push to
+`registry.sagecontinuum.org`. The build succeeds, but the push is denied:
+
+```
+denied: requested access to the resource is denied
+```
+
+`docker login registry.sagecontinuum.org` with a Sage portal access token
+**authenticates** (login succeeds) but the token is **read/pull-only** — it
+lacks push/write scope to the `beckman` namespace. Registry writes are
+reserved for the Jenkins build pipeline. Getting push access (or a native
+arm64 builder) is an ECR-team request — see "Systemic fix" below.
+
+### The working workaround: build locally + sideload into k3s
+
+Because SES pods on Thor use **`imagePullPolicy: IfNotPresent`**, the
+scheduler will use a locally-cached image if one is already present in k3s
+containerd under the exact registry-qualified name — it never has to pull
+from the registry. So we build natively on Thor, tag with the full
+registry path, and import it straight into k3s. No registry push needed.
+
+**Step 1 — build natively on Thor (arm64, no QEMU):**
+
+```bash
+cd ~/sage-yolo
+git pull
+sudo docker build -t registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0 .
+```
+
+Note the tag is the **full registry path**, not the bare
+`yolo-object-counter:0.2.0`. This must exactly match the `image:` field in
+the job YAML so k3s finds the cached copy.
+
+**Step 2 — sideload into k3s containerd:**
+
+```bash
+sudo docker save registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0 \
+  | sudo k3s ctr images import -
+```
+
+**Step 3 — verify it landed (and is CRI-managed):**
+
+```bash
+sudo k3s ctr images ls | grep yolo-object-counter
+# Expect a line tagged registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0
+# with io.cri-containerd.image=managed  (that label = k8s/SES can see it)
+```
+
+**Step 4 — register the app in the ECR portal (metadata only).** The app
+must exist in the ECR *catalog* so the SES scheduler's validation passes
+(SES checks the app catalog, not the raw Docker registry). The portal
+*build* will fail (QEMU) — that's fine, we only need the app + version
+record registered. Make the app **public** or SES returns
+`registry does not exist in ECR`.
+
+**Step 5 — create + submit the SES cron job** (needs a write-scoped SES
+token in your interactive shell; see jobs/yolo-hummingcam-h00f.yaml):
+
+```bash
+sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+    create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
+sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+    submit -j <job-id>
+```
+
+**Step 6 — verify it fires and publishes.** The pod appears in the `ses`
+namespace each tick, runs ~30-40s, exits (one-shot), and is GC'd — so it's
+invisible between ticks. Confirm via the data API instead:
+
+```bash
+curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"start":"-15m","filter":{"vsn":"H00F","name":"env.count.total"}}'
+```
+
+The proof it's the SES job (not a leftover hand-deployed pod) is in the
+record metadata: `"job": "yolo-object-counter-<id>"` and
+`"plugin": "registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0"`
+("already present on machine" in the pod events confirms the sideload hit).
+
+### Re-deploying after a code change (new version)
+
+Bump the version everywhere (sage.yaml, Makefile, job YAML), then repeat
+build → sideload with the new tag. Because the tag changes, k3s pulls the
+new local image on the next tick automatically; no job re-submit needed if
+the job YAML already points at the new tag (otherwise update + re-submit).
+
+### Systemic fix (escalate to the ECR/cyberinfra team)
+
+The sideload workaround is manual and per-node. The durable fix is one of:
+
+- **(a)** Grant push/write access to `registry.sagecontinuum.org/beckman/`
+  for a Sage portal token, so `docker push` works after a native Thor build; or
+- **(b)** Add a **native arm64 build node** to the Jenkins ECR pipeline so
+  the portal "Register and Build" path works without QEMU.
+
+Either unblocks every Thor-targeted NVIDIA plugin (yolo, bioclip, birdnet)
+and removes the manual sideload step entirely.
 
 See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
 
