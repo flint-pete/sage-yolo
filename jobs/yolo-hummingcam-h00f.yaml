@@ -1,0 +1,37 @@
+# ──────────────────────────────────────────────────────────────
+# YOLO Object Counter — H00F hummingbird cam (SES cron, one-shot)
+# Replaces the hand-deployed continuous pod (default ns, --continuous Y
+# --interval 60) with a proper scheduler-managed one-shot job every 10 min.
+#
+# Image: ECR app beckman/yolo-object-counter:0.2.0
+# Camera: Reolink RLC-811A snapshot CGI (creds as query params, single-quoted
+#         to protect ! & ? from the shell — already safe inside YAML quotes).
+#
+# Submit (with a write-scoped token):
+#   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" create -f jobs/yolo-hummingcam-h00f.yaml
+#   sesctl ... submit -j <returned-id>
+# ──────────────────────────────────────────────────────────────
+name: yolo-hummingcam
+plugins:
+  - name: yolo-object-counter
+    pluginSpec:
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0
+      args:
+        - "--snapshot-url"
+        - "http://10.107.0.221:10000/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=sage&password=SageCam!&width=640&height=360"
+        - "--model"
+        - "yolo11x.pt"
+        - "--conf-thres"
+        - "0.25"
+        - "--continuous"
+        - "N"
+        - "--upload-image"
+        - "Y"
+      selector:
+        resource.gpu: "true"
+nodes:
+  H00F: true
+scienceRules:
+  - "schedule(yolo-object-counter): cronjob('yolo-object-counter', '*/10 * * * *')"
+successcriteria:
+  - WallClock('30day')
