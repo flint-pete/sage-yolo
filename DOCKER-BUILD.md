@@ -315,12 +315,35 @@ sudo pluginctl deploy -n yolo-hummingcam \
 ```
 
 
-## Production: Scheduled SES Cron Jobs on Thor (arm64)
+## Production: Scheduled SES Jobs on Thor (arm64)
 
-This is the production deployment path — a scheduler-managed one-shot
-cron job (every 10 min) instead of a hand-deployed continuous pod. It
-replaces the `pluginctl deploy ... --continuous Y` approach above, which
-pins the GPU/RAM 24/7, dies on reboot, and is invisible to the scheduler.
+This is the production deployment path — a scheduler-managed job that
+survives reboots and is visible to the scheduler, instead of a hand-deployed
+`pluginctl` pod. There are **two modes**, and choosing the right one matters
+a lot for what you're observing:
+
+### Continuous vs One-shot — choose before you deploy
+
+| | **Continuous** (default for birds) | **One-shot** (cron) |
+|---|---|---|
+| Job file | `jobs/yolo-hummingcam-h00f.yaml` | `jobs/yolo-hummingcam-h00f-oneshot.yaml` |
+| Args | `--continuous Y --interval 60` | `--continuous N` |
+| Science rule | `schedule(...): True` | `schedule(...): cronjob(..., '*/10 * * * *')` |
+| Sampling | every 60 s (pod stays running) | once per cron tick (pod exits between) |
+| GPU | held 24/7 | freed between ticks |
+| Best for | fast / intermittent subjects: **hummingbirds**, traffic, people | slow scenes: clouds, snow depth, parking occupancy |
+
+**Why this matters — a real failure we hit:** when the hummingbird cam ran
+as a `*/10` one-shot cron, bird detections collapsed from ~15/day to ~0. A
+hummingbird visits the feeder for only a few seconds, so sampling once every
+10 minutes almost never catches one in-frame. The fix was to run
+**continuous** with a 60-second interval. **Rule of thumb:** if your subject
+appears briefly and unpredictably, use continuous; if the scene changes
+slowly, one-shot is cheaper and fine.
+
+To switch modes, just deploy the other job file (see "Create + submit" below).
+You can tune the one-shot rate via its cron expression, but each tick reloads
+the ~5 GB YOLO model, so for sub-2-minute sampling use continuous instead.
 
 ### Why the normal ECR portal build does NOT work for this plugin
 
@@ -336,6 +359,8 @@ for any arm64 plugin on the NVIDIA base image**, and here is why:
 
 So the portal build is a dead end for Thor-targeted NVIDIA plugins until
 the ECR pipeline gets a **native arm64 builder**.
+
+
 
 ### Why `docker push` to the registry also does NOT work (yet)
 
@@ -434,15 +459,27 @@ gets created, which is all SES needs.
 Either way, make the app **public** or SES returns
 `registry does not exist in ECR`.
 
-**Step 5 — create + submit the SES cron job** (needs a write-scoped SES
-token in your interactive shell; see jobs/yolo-hummingcam-h00f.yaml):
+**Step 5 — create + submit the SES job** (needs a write-scoped SES
+token in your interactive shell). **Pick the job file for your mode** (see
+"Continuous vs One-shot" above):
+
+- Continuous (default, for hummingbirds): `jobs/yolo-hummingcam-h00f.yaml`
+- One-shot cron (slow scenes): `jobs/yolo-hummingcam-h00f-oneshot.yaml`
 
 ```bash
+# Continuous (recommended for the bird cam):
 sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
     create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
 sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
     submit -j <job-id>
+
+# …or one-shot cron instead (swap the file):
+#   create -f jobs/yolo-hummingcam-h00f-oneshot.yaml
 ```
+
+To switch an already-running job between modes: suspend + remove the old
+job (`sesctl ... rm -s <id>` then `sesctl ... rm <id>`), then create +
+submit the other job file.
 
 **Step 6 — verify it fires and publishes.** The pod appears in the `ses`
 namespace each tick, runs ~30-40s, exits (one-shot), and is GC'd — so it's

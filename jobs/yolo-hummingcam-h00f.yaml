@@ -1,11 +1,23 @@
 # ──────────────────────────────────────────────────────────────
-# YOLO Object Counter — H00F hummingbird cam (SES cron, one-shot)
-# Replaces the hand-deployed continuous pod (default ns, --continuous Y
-# --interval 60) with a proper scheduler-managed one-shot job every 10 min.
+# YOLO Object Counter — H00F hummingbird cam (CONTINUOUS, scheduler-managed)
+#
+# This is the DEFAULT/recommended mode for the hummingbird cam. It samples a
+# frame every 60 seconds, which is required to actually catch hummingbirds:
+# they visit the feeder for only a few seconds, so a slow sampling rate misses
+# them almost entirely. (When this ran as a */10 one-shot cron, bird detections
+# collapsed from ~15/day to ~0 — the bird is rarely in-frame at the 10-min mark.)
+#
+# CONTINUOUS vs ONE-SHOT — choose your mode:
+#   • CONTINUOUS (this file): --continuous Y --interval 60, scheduler keeps the
+#     pod running, captures every 60s. Best detection; holds the GPU. Use for
+#     fast/intermittent subjects like hummingbirds.
+#   • ONE-SHOT  (jobs/yolo-hummingcam-h00f-oneshot.yaml): --continuous N on a
+#     cron schedule (e.g. */10). One capture per tick, frees the GPU between
+#     ticks. Fine for slow-changing scenes (clouds, parking lots, snow depth),
+#     too sparse for birds. See that file's header for the trade-offs.
 #
 # Image: ECR app beckman/yolo-object-counter:0.2.0
-# Camera: Reolink RLC-811A snapshot CGI (creds as query params, single-quoted
-#         to protect ! & ? from the shell — already safe inside YAML quotes).
+# Camera: Reolink RLC-811A snapshot CGI (creds as query params).
 #
 # Submit (with a write-scoped token):
 #   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" create -f jobs/yolo-hummingcam-h00f.yaml
@@ -24,7 +36,9 @@ plugins:
         - "--conf-thres"
         - "0.25"
         - "--continuous"
-        - "N"
+        - "Y"
+        - "--interval"
+        - "60"
         - "--upload-image"
         - "Y"
       selector:
@@ -32,6 +46,8 @@ plugins:
 nodes:
   H00F: true
 scienceRules:
-  - "schedule(yolo-object-counter): cronjob('yolo-object-counter', '*/10 * * * *')"
+  # Continuous: schedule the plugin to run and stay running (no cronjob()).
+  # The plugin's own --continuous Y / --interval 60 loop drives the 60s cadence.
+  - "schedule(yolo-object-counter): True"
 successcriteria:
   - WallClock('30day')
