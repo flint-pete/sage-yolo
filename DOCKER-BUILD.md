@@ -322,28 +322,45 @@ survives reboots and is visible to the scheduler, instead of a hand-deployed
 `pluginctl` pod. There are **two modes**, and choosing the right one matters
 a lot for what you're observing:
 
-### Continuous vs One-shot — choose before you deploy
+### Continuous vs One-shot vs Windowed — choose before you deploy
 
-| | **Continuous** (default for birds) | **One-shot** (cron) |
-|---|---|---|
-| Job file | `jobs/yolo-hummingcam-h00f.yaml` | `jobs/yolo-hummingcam-h00f-oneshot.yaml` |
-| Args | `--continuous Y --interval 60` | `--continuous N` |
-| Science rule | `schedule(...): True` | `schedule(...): cronjob(..., '*/10 * * * *')` |
-| Sampling | every 60 s (pod stays running) | once per cron tick (pod exits between) |
-| GPU | held 24/7 | freed between ticks |
-| Best for | fast / intermittent subjects: **hummingbirds**, traffic, people | slow scenes: clouds, snow depth, parking occupancy |
+| | **Windowed** (default for birds) | **Continuous** (always-on) | **One-shot** (cron) |
+|---|---|---|---|
+| Job file | `jobs/yolo-hummingcam-h00f.yaml` | (git history / hand-edit) | `jobs/yolo-hummingcam-h00f-oneshot.yaml` |
+| Args | `--continuous Y --interval 15 --max-runtime 600` | `--continuous Y --interval 60` | `--continuous N` |
+| Science rule | `cronjob(..., '0 * * * *')` | `schedule(...): True` | `cronjob(..., '*/10 * * * *')` |
+| Sampling | every 15 s for 10 min/hour, then self-exit | every 60 s, forever | once per cron tick |
+| GPU | ~10 min/hour (shares with other plugins) | held 24/7 | freed between ticks |
+| Best for | birds on a **single-GPU node** shared with another model | birds on a node with a dedicated GPU | slow scenes: clouds, snow, occupancy |
+
+**Why Windowed is the default on Thor (single-GPU sharing).** Thor has ONE GPU,
+and two always-on continuous plugins cannot co-run — a held GPU blocks the
+second pod from scheduling at all. So YOLO and BioCLIP each take a bounded
+10-minute window per hour instead of holding the GPU 24/7:
+
+```
+:00–:10  YOLO     (--max-runtime 600, samples every 15s)
+:10–:20  guard-band
+:20–:30  BioCLIP  (--max-runtime 600, samples every 15s)
+:30–:00  guard-band
+```
+
+The **`--max-runtime`** flag (added in 0.2.1) is what makes this work: in
+`--continuous Y` mode the plugin loops every `--interval` seconds, then
+self-exits after `--max-runtime` seconds — behaving like one long bounded
+single-shot and freeing the GPU. A cron starts each window; the plugin ends it.
+The 10-minute guard-bands absorb any model-load overrun so the two never collide
+on the single GPU. Net GPU use: ~20 min/hour (~1/3) for both plugins combined.
 
 **Why this matters — a real failure we hit:** when the hummingbird cam ran
 as a `*/10` one-shot cron, bird detections collapsed from ~15/day to ~0. A
 hummingbird visits the feeder for only a few seconds, so sampling once every
-10 minutes almost never catches one in-frame. The fix was to run
-**continuous** with a 60-second interval. **Rule of thumb:** if your subject
-appears briefly and unpredictably, use continuous; if the scene changes
-slowly, one-shot is cheaper and fine.
+10 minutes almost never catches one in-frame. Windowed mode samples every 15s
+*within* its window, restoring detection coverage while still sharing the GPU.
+**Rule of thumb:** brief/unpredictable subject + shared GPU → windowed; brief
+subject + dedicated GPU → continuous; slowly-changing scene → one-shot.
 
 To switch modes, just deploy the other job file (see "Create + submit" below).
-You can tune the one-shot rate via its cron expression, but each tick reloads
-the ~5 GB YOLO model, so for sub-2-minute sampling use continuous instead.
 
 ### Why the normal ECR portal build does NOT work for this plugin
 
