@@ -2,6 +2,19 @@
 
 All notable changes to the `yolo-object-counter` Sage plugin.
 
+## 0.2.2 — 2026-06-23
+
+### Added
+- **Standard `plugin.duration.*` performance telemetry** (matching
+  `avian-diversity-monitoring` / TAFT-node convention). Each cycle publishes
+  nanosecond phase timings via pywaggle's `plugin.timeit`:
+  `plugin.duration.loadmodel` (model load + device move, once),
+  `plugin.duration.input` (snapshot/capture + decode, per cycle),
+  `plugin.duration.inference` (YOLO detection, per cycle). Makes cold-start cost
+  and per-cycle latency observable from the data plane and doubles as a liveness
+  signal on empty scenes. Model load refactored into a `load()` method so it can
+  be timed inside the Plugin context.
+
 ## 0.2.1 — 2026-06-22
 
 ### Added

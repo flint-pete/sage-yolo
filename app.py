@@ -51,9 +51,17 @@ class YOLODetector:
         self.augment = augment
         self.agnostic_nms = agnostic_nms
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = None  # loaded lazily via load() so the model construction
+                           # can be timed inside the Plugin context
+                           # (plugin.duration.loadmodel)
+
+    def load(self):
+        """Construct + move the model to device. Separated from __init__ so
+        callers can wrap it in plugin.timeit('plugin.duration.loadmodel')."""
         logger.info("Loading %s on %s (conf=%.2f, iou=%.2f, imgsz=%d)",
-                     model_name, self.device, conf_thres, iou_thres, imgsz)
-        self.model = YOLO(model_name)
+                     self.model_name, self.device, self.conf_thres,
+                     self.iou_thres, self.imgsz)
+        self.model = YOLO(self.model_name)
         self.model.to(self.device)
         logger.info("Model loaded — %d classes available", len(self.model.names))
 
@@ -269,6 +277,12 @@ Examples:
         logger.info("Plugin started — source=%s, interval=%ds, model=%s",
                      source_label, args.interval, args.model)
 
+        # Load the model, timed as plugin.duration.loadmodel (nanoseconds) —
+        # the standard Sage telemetry convention (see avian-diversity-monitoring
+        # / TAFT). Makes cold-start cost observable for GPU-window sizing.
+        with plugin.timeit("plugin.duration.loadmodel"):
+            detector.load()
+
         if not using_image_dir:
             logger.info("Capture interval: %ds", args.interval)
 
@@ -283,29 +297,35 @@ Examples:
 
         while True:
             try:
-                if using_image_dir:
-                    # Get next image from directory iterator
-                    try:
-                        img_path, frame, timestamp = next(image_source)
-                    except StopIteration:
-                        logger.info("All test images processed")
-                        break
-                    source_name = os.path.basename(img_path)
-                    logger.info("Processing: %s (%dx%d)",
-                                source_name, frame.shape[1], frame.shape[0])
-                elif using_snapshot_url:
-                    frame = fetch_snapshot(args.snapshot_url)
-                    timestamp = time.time_ns()
-                    source_name = "http-snapshot"
-                    logger.info("Snapshot: %dx%d from %s",
-                                frame.shape[1], frame.shape[0], source_label)
-                else:
-                    sample = camera.snapshot()
-                    frame = sample.data  # numpy BGR
-                    timestamp = sample.timestamp
-                    source_name = args.stream
+                # Acquire input, timed as plugin.duration.input (nanoseconds) —
+                # standard Sage phase metric, published every cycle (even on
+                # empty scenes) so it doubles as a liveness signal.
+                with plugin.timeit("plugin.duration.input"):
+                    if using_image_dir:
+                        # Get next image from directory iterator
+                        try:
+                            img_path, frame, timestamp = next(image_source)
+                        except StopIteration:
+                            logger.info("All test images processed")
+                            break
+                        source_name = os.path.basename(img_path)
+                        logger.info("Processing: %s (%dx%d)",
+                                    source_name, frame.shape[1], frame.shape[0])
+                    elif using_snapshot_url:
+                        frame = fetch_snapshot(args.snapshot_url)
+                        timestamp = time.time_ns()
+                        source_name = "http-snapshot"
+                        logger.info("Snapshot: %dx%d from %s",
+                                    frame.shape[1], frame.shape[0], source_label)
+                    else:
+                        sample = camera.snapshot()
+                        frame = sample.data  # numpy BGR
+                        timestamp = sample.timestamp
+                        source_name = args.stream
 
-                detections = detector.detect(frame, target_classes)
+                # Run inference, timed as plugin.duration.inference (nanoseconds).
+                with plugin.timeit("plugin.duration.inference"):
+                    detections = detector.detect(frame, target_classes)
 
                 # Aggregate counts per class
                 counts: dict[str, int] = {}

@@ -86,6 +86,23 @@ on one device without a dedicated GPU each.
 Annotated JPEG images with bounding boxes are uploaded each cycle when
 `--upload-image Y` is set.
 
+### Performance Telemetry
+
+Following the standard Sage convention (as used by `avian-diversity-monitoring`
+and other production plugins on TAFT nodes), every cycle publishes nanosecond
+timing for the three execution phases, making cold-start cost and per-cycle
+latency observable from the data plane (e.g. whether a bounded GPU window is
+spent on model load vs. inference):
+
+| Topic | Unit | Frequency | Description |
+|-------|------|-----------|-------------|
+| `plugin.duration.loadmodel` | ns | once | Load + move the YOLO model to device |
+| `plugin.duration.input`     | ns | per cycle | Capture/snapshot + decode the frame |
+| `plugin.duration.inference` | ns | per cycle | Run YOLO detection |
+
+These publish every cycle regardless of detections, so they also serve as a
+liveness/heartbeat signal on empty scenes.
+
 ## Example Use Cases
 
 - **Urban traffic monitoring** — count vehicles, pedestrians, and cyclists
