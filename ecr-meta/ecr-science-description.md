@@ -65,6 +65,17 @@ slow model teardown, leaving the GPU free at the boundaries.  Total GPU
 occupancy is roughly 20 minutes per hour, allowing both workloads to coexist
 on one device without a dedicated GPU each.
 
+> **Subtle behavior — `--max-runtime` is WALL-CLOCK, not inference time.** The
+> timer starts when the process starts, so model load, the first camera
+> connection, and any startup overhead all count against the window. YOLO's
+> model is small (~seconds), so the effective sampling window is close to the
+> full `--max-runtime`. But the practical implication is general: the actual
+> time spent sampling is `--max-runtime` *minus* startup, not the full value.
+> If you need a guaranteed amount of *inference* time, size `--max-runtime`
+> above your target to absorb the cold start, and keep the guard-band wide
+> enough that a slow start can't push the self-exit into the next plugin's
+> window.
+
 ## Measurements Published
 
 | Topic                     | Type  | Description                        |
