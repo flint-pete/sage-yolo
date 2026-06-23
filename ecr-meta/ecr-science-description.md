@@ -31,6 +31,40 @@ publishes per-class counts via `plugin.publish()` and annotated images via
 `plugin.upload_file()`.  A single iteration completes in under 50 ms on
 NVIDIA Blackwell (GB10), leaving the GPU available for concurrent workloads.
 
+## Runtime Modes
+
+By default (`--continuous Y`) the plugin loops indefinitely, capturing and
+publishing every `--interval` seconds.  With `--continuous N` it performs a
+single shot and exits.
+
+| Argument         | Default | Description                                                                 |
+|------------------|---------|-----------------------------------------------------------------------------|
+| `--continuous`   | `Y`     | `Y` = loop every `--interval` seconds; `N` = single-shot then exit.         |
+| `--interval`     | `30`    | Seconds between captures (camera mode only).                                |
+| `--max-runtime`  | `0`     | When in continuous mode, self-exit after this many seconds (`0` = run forever). Lets a scheduled job behave like one long bounded single-shot. Ignored when `--continuous N`. |
+
+## Windowed GPU Sharing
+
+Some edge nodes carry a **single GPU** that must be shared between multiple
+always-on continuous plugins — which cannot truly co-run without contending
+for GPU memory and compute.  The `--max-runtime` flag turns YOLO into a
+*bounded* continuous job that occupies the GPU for a fixed window and then
+voluntarily releases it.
+
+For example, on a node where YOLO shares one GPU with the BioCLIP plugin, a
+scheduler (cron) starts each plugin at a fixed minute and each runs a bounded
+10-minute window:
+
+- **:00 — YOLO** runs `--continuous Y --max-runtime 600 --interval 15`,
+  sampling roughly every 15 s (~40 frames) for 10 minutes, then self-exits.
+- **:20 — BioCLIP** takes the next window after a 10-minute guard-band that
+  guarantees YOLO has fully exited and freed the GPU.
+
+The 10-minute guard-bands between windows (e.g. :10–:20) prevent overlap from
+slow model teardown, leaving the GPU free at the boundaries.  Total GPU
+occupancy is roughly 20 minutes per hour, allowing both workloads to coexist
+on one device without a dedicated GPU each.
+
 ## Measurements Published
 
 | Topic                     | Type  | Description                        |
