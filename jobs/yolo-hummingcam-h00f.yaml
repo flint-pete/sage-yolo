@@ -38,7 +38,7 @@ name: yolo-hummingcam
 plugins:
   - name: yolo-object-counter
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.1
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.2
       args:
         - "--snapshot-url"
         - "http://10.107.0.221:10000/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=sage&password=SageCam!&width=640&height=360"
