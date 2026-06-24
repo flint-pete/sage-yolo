@@ -81,10 +81,34 @@ on one device without a dedicated GPU each.
 | Topic                     | Type  | Description                        |
 |---------------------------|-------|------------------------------------|
 | `env.count.<class_name>`  | int   | Count of each detected class       |
-| `env.count.total`         | int   | Total objects detected in frame    |
+| `env.count.total`         | int   | Total objects detected in frame (published EVERY cycle, even at 0 — heartbeat) |
+| `upload` (annotated JPEG) | image | Annotated frame with bounding boxes, uploaded selectively — see Saving Images |
 
-Annotated JPEG images with bounding boxes are uploaded each cycle when
-`--upload-image Y` is set.
+## Saving Images: `--save-match`
+
+The plugin separates *what it counts* (always published) from *what frames it
+saves* (selective). Counts and the `env.count.total` heartbeat publish every
+cycle; uploading an annotated JPEG is the expensive part, so it is governed
+separately:
+
+- **`--save-match`** (preferred) — a comma-separated OR-list of `Class:confidence`
+  rules. The annotated frame is uploaded when ANY detection matches ANY rule.
+  Class is matched **case-insensitively** and **exactly** against the COCO class
+  name (no substring). Examples:
+
+  ```
+  --save-match "bird:0.5,cat:0.6"   # save when a bird >=0.5 OR a cat >=0.6 is seen
+  --save-match "*:0.5"               # save any frame with a detection >=0.5
+  ```
+
+  When `--save-match` is set it REPLACES the legacy upload-every-cycle behavior.
+
+- **`--upload-image`** (deprecated, back-compat) — only consulted when
+  `--save-match` is omitted. `Y` (default) uploads every cycle that has
+  detections (legacy behavior); `N` never uploads.
+
+To save selectively, prefer `--save-match`. To save nothing (counts/heartbeat
+only), set `--upload-image N` and omit `--save-match`.
 
 ### Performance Telemetry
 

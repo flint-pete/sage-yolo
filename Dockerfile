@@ -39,6 +39,7 @@ RUN pip uninstall -y opencv-python opencv-python-headless 2>/dev/null; \
 # invalidate the expensive (~130 MB) model download layer.
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
 
+COPY save_match.py .
 COPY app.py .
 
 ENTRYPOINT ["python3", "/app/app.py"]

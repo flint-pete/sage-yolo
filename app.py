@@ -28,6 +28,8 @@ from ultralytics import YOLO
 from waggle.plugin import Plugin
 from waggle.data.vision import Camera
 
+from save_match import parse_save_match, should_save, SaveMatchError
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -244,13 +246,42 @@ Examples:
                              "--interval 15 samples every 15s for ~10 min then self-exits, "
                              "freeing the GPU for other plugins. Ignored when --continuous N.")
     parser.add_argument("--upload-image", default="Y",
-                        help="Y = upload annotated image each cycle")
+                        help="DEPRECATED gate kept for back-compat. Y = allow image "
+                             "uploads, N = never upload. Actual saving is governed by "
+                             "--save-match; with --upload-image Y and no --save-match, "
+                             "every cycle with detections is uploaded (legacy behavior).")
+    parser.add_argument("--save-match", default="",
+                        help="When to SAVE (upload) the annotated frame. Comma-separated "
+                             "OR-list of 'Class:confidence' rules, e.g. "
+                             "\"bird:0.5,cat:0.6\". Class is matched case-insensitively "
+                             "and EXACTLY against the COCO class name. Use \"*:0.5\" to "
+                             "save any frame with a detection >=0.5. The frame is saved "
+                             "if ANY detection matches ANY rule. When set, it REPLACES "
+                             "the legacy upload-every-cycle behavior. Omit to keep legacy "
+                             "behavior (governed by --upload-image).")
     args = parser.parse_args()
 
     target_classes = None
     if args.classes:
         target_classes = [c.strip().lower() for c in args.classes.split(",")]
         logger.info("Filtering to classes: %s", target_classes)
+
+    # Parse --save-match up front and FAIL FAST on a malformed spec.
+    try:
+        save_rules = parse_save_match(args.save_match)
+    except SaveMatchError as e:
+        logger.error("Invalid --save-match: %s", e)
+        raise SystemExit(2)
+    if save_rules:
+        logger.info("Image save rules (--save-match): %s",
+                    ", ".join(f"{'*' if r.is_wildcard else r.name}>={r.min_confidence}"
+                              for r in save_rules))
+    elif args.upload_image == "Y":
+        logger.info("No --save-match rules: using legacy behavior — upload every "
+                    "cycle that has detections (--upload-image Y).")
+    else:
+        logger.info("No --save-match rules and --upload-image N: images will NOT "
+                    "be saved (counts + heartbeat still publish).")
 
     detector = YOLODetector(args.model, args.conf_thres, args.iou_thres,
                             imgsz=args.imgsz, half=args.half,
@@ -365,19 +396,33 @@ Examples:
                     },
                 )
 
-                # Upload annotated image
-                if args.upload_image == "Y" and detections:
+                # SAVE (selective): decide whether to upload the annotated frame.
+                # - With --save-match rules: upload only when a detection matches
+                #   a rule (any rule x any detection). This is the new behavior.
+                # - Without rules: fall back to legacy --upload-image Y (upload
+                #   every cycle that has detections).
+                if save_rules:
+                    do_upload = should_save(save_rules, detections, name_keys=["class"])
+                else:
+                    do_upload = args.upload_image == "Y" and bool(detections)
+
+                if do_upload and detections:
                     annotated = draw_boxes(frame, detections)
                     stem = os.path.splitext(source_name)[0]
                     tmp_path = os.path.join(tempfile.gettempdir(),
                                             f"{stem}-annotated.jpg")
                     cv2.imwrite(tmp_path, annotated)
+                    top = max(detections, key=lambda d: d["confidence"])
                     plugin.upload_file(tmp_path, timestamp=timestamp,
                                        meta={"camera": source_name,
-                                             "detections": str(len(detections))})
+                                             "detections": str(len(detections)),
+                                             "top_class": str(top["class"]),
+                                             "confidence": str(top["confidence"])})
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
-                    logger.info("Uploaded annotated image (%d detections)", len(detections))
+                    why = "save-match matched" if save_rules else "legacy upload"
+                    logger.info("Uploaded annotated image (%d detections, %s)",
+                                len(detections), why)
 
                 if not detections:
                     logger.info("No detections this cycle")

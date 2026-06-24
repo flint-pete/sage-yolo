@@ -2,6 +2,31 @@
 
 All notable changes to the `yolo-object-counter` Sage plugin.
 
+## 0.3.0 — 2026-06-24
+
+### Added
+- **`--save-match`: class-aware image saving, decoupled from publishing.**
+  The annotated frame is now uploaded only when a detection matches a
+  user-supplied OR-list of `Class:confidence` rules (e.g. `"bird:0.5,cat:0.6"`).
+  A frame is saved when ANY detection matches ANY rule. Class matching is
+  case-insensitive and EXACT against the COCO class name. The wildcard `"*:0.5"`
+  saves any frame with a detection ≥0.5. Implemented via the shared
+  `save_match.py` helper (29 unit tests, identical copy to bioclip/birdnet).
+
+### Changed
+- **Image saving is now selective when `--save-match` is set**, replacing the
+  upload-every-cycle behavior. Counts (`env.count.*`) and the `env.count.total`
+  heartbeat still publish every cycle regardless. Upload meta now also carries
+  `top_class` and `confidence`.
+- **`--upload-image` is now a deprecated back-compat gate.** With `--save-match`
+  omitted, behavior is unchanged: `--upload-image Y` uploads every cycle that has
+  detections (legacy), `N` never uploads. When `--save-match` is provided it takes
+  precedence and `--upload-image` is ignored.
+
+### Migration
+- To save selectively, add `--save-match` (e.g. `"bird:0.5"` or `"*:0.4"`).
+  Omitting it keeps the previous upload-every-cycle behavior via `--upload-image`.
+
 ## 0.2.2 — 2026-06-23
 
 ### Added

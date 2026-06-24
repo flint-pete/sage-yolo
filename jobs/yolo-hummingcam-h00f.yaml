@@ -24,7 +24,7 @@
 #     so a fork detection means a human placed one in-frame to DEMONSTRATE the
 #     trigger end-to-end (unambiguous, unlike a fixed-object false positive).
 #
-# Image: ECR app beckman/yolo-object-counter:0.2.1
+# Image: ECR app beckman/yolo-object-counter:0.3.0
 # Camera: Reolink RLC-811A snapshot CGI (creds as query params).
 #
 # Submit (with a write-scoped token):
@@ -38,7 +38,7 @@ name: yolo-hummingcam
 plugins:
   - name: yolo-object-counter
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.2
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.0
       args:
         - "--snapshot-url"
         - "http://10.107.0.221:10000/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=sage&password=SageCam!&width=640&height=360"
@@ -54,8 +54,12 @@ plugins:
         - "15"
         - "--max-runtime"
         - "600"
-        - "--upload-image"
-        - "Y"
+        - "--save-match"
+        # Save the annotated frame for ANY of the counted classes at >=0.25
+        # (matches the conf floor — every cycle with a real detection is saved,
+        # same effect as the old --upload-image Y). To save only the interesting
+        # subjects, narrow to e.g. "bird:0.4,fork:0.4".
+        - "*:0.25"
       selector:
         resource.gpu: "true"
 nodes:
