@@ -3,15 +3,21 @@
 # reolink-set-focus.sh — set a Reolink camera's focus to a specific numeric value.
 #
 # Reolink splits auth by operation: *reads* (GetZoomFocus) work with query-param
-# auth, but the *actuating* StartZoomFocus write needs a real session token
-# (query-param auth returns rspCode -26 "ability error"). This script does the
-# full two-step flow: Login -> token -> StartZoomFocus, and validates the focus
-# value against the camera's advertised range first (fail-fast on bad input).
+# auth, but the *actuating* SetAutoFocus/StartZoomFocus writes need a real session
+# token AND an ADMIN account (a guest account gets rspCode -26 "ability error").
+# This script does the full flow: Login -> token -> disable autofocus -> set focus,
+# validating the focus value against the camera's advertised range first
+# (fail-fast on bad input).
+#
+# By DEFAULT it disables autofocus first so the focus value LOCKS and stays put
+# (autofocus, if left on, can re-drive the lens on scene/light changes and undo
+# your setting). Pass --keep-autofocus to skip that step and just nudge focus
+# once, leaving autofocus enabled.
 #
 # Usage:
-#   ./reolink-set-focus.sh <camera-url> <username> <password> <focus-value>
+#   ./reolink-set-focus.sh [--keep-autofocus] <camera-url> <username> <password> <focus-value>
 #
-# Example (H00F hummingcam, RLC-811A):
+# Example (H00F hummingcam, RLC-811A — requires the ADMIN account):
 #   ./reolink-set-focus.sh http://10.107.0.221:10000 admin '<ADMIN_PASSWORD>' 3065
 #
 # Notes:
@@ -20,6 +26,7 @@
 #   - Quote the password in single quotes if it contains ! & ? etc.
 #   - Focus range is camera-specific; the script reads it live and rejects
 #     out-of-range values before touching the lens.
+#   - Focus control is ADMIN-only; a guest account yields -26 "ability error".
 #
 # Exit codes:
 #   0  focus set successfully
@@ -28,6 +35,7 @@
 #   3  login failed (bad credentials / no token)
 #   4  focus value out of range
 #   5  camera rejected the focus command
+#   6  camera rejected the disable-autofocus command
 #
 set -euo pipefail
 
@@ -40,8 +48,14 @@ for dep in curl python3; do
 done
 
 # ── arguments (fail fast) ───────────────────────────────────────────
+DISABLE_AF=1   # default: lock focus by disabling autofocus first
+if [ "${1:-}" = "--keep-autofocus" ]; then
+    DISABLE_AF=0
+    shift
+fi
+
 if [ "$#" -ne 4 ]; then
-    echo "Usage: $0 <camera-url> <username> <password> <focus-value>" >&2
+    echo "Usage: $0 [--keep-autofocus] <camera-url> <username> <password> <focus-value>" >&2
     echo "  e.g. $0 http://10.107.0.221:10000 admin '<ADMIN_PASSWORD>' 3065" >&2
     exit 1
 fi
@@ -162,9 +176,44 @@ if [ -z "$TOKEN" ]; then
 fi
 echo "   token acquired: ${TOKEN:0:8}..."
 
-# ── step 2: set focus using the token ───────────────────────────────
-echo ">> Setting focus to $FOCUS ..."
 TOKEN_ENC="$(urlencode "$TOKEN")"
+
+# ── step 2: disable autofocus (switch to manual) so the focus LOCKS ──
+# Skipped with --keep-autofocus. Without this, autofocus can re-drive the lens
+# after we set it and undo the value.
+if [ "$DISABLE_AF" -eq 1 ]; then
+    echo ">> Disabling autofocus (manual focus) so the value will hold ..."
+    AF_JSON="$(curl -s --max-time 15 "${API}?cmd=SetAutoFocus&token=${TOKEN_ENC}" \
+        -H "Content-Type: application/json" \
+        -d '[{"cmd":"SetAutoFocus","action":0,"param":{"AutoFocus":{"channel":0,"disable":1}}}]' || true)"
+
+    if [ -z "$AF_JSON" ]; then
+        echo "ERROR: no response to SetAutoFocus" >&2
+        exit 2
+    fi
+
+    printf '%s' "$AF_JSON" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)[0]
+except Exception as e:
+    sys.stderr.write("ERROR: could not parse SetAutoFocus response: %s\n" % e); sys.exit(6)
+if d.get("code") == 0:
+    sys.exit(0)
+sys.stderr.write("ERROR: camera rejected SetAutoFocus (autofocus disable): %s\n" % json.dumps(d.get("error", d)))
+sys.exit(6)
+' || {
+        echo "Raw response: $AF_JSON" >&2
+        echo "HINT: focus/autofocus control is ADMIN-only; a guest account returns -26." >&2
+        exit 6
+    }
+    echo "   autofocus disabled (manual focus mode)"
+else
+    echo ">> --keep-autofocus: leaving autofocus ENABLED (focus may drift back)"
+fi
+
+# ── step 3: set focus using the token ───────────────────────────────
+echo ">> Setting focus to $FOCUS ..."
 SET_JSON="$(curl -s --max-time 15 "${API}?cmd=StartZoomFocus&token=${TOKEN_ENC}" \
     -H "Content-Type: application/json" \
     -d "[{\"cmd\":\"StartZoomFocus\",\"action\":0,\"param\":{\"ZoomFocus\":{\"channel\":0,\"op\":\"FocusPos\",\"pos\":${FOCUS}}}}]" || true)"
@@ -190,6 +239,12 @@ sys.exit(5)
     exit 5
 }
 
-echo "OK: focus command accepted (pos=$FOCUS). The lens moves asynchronously;"
-echo "    re-run GetZoomFocus in a moment to confirm it settled."
+if [ "$DISABLE_AF" -eq 1 ]; then
+    echo "OK: autofocus disabled and focus set to pos=$FOCUS. The lens moves"
+    echo "    asynchronously and may settle a few counts off the commanded value"
+    echo "    (lens back-lash) but will then HOLD. Re-run GetZoomFocus to confirm."
+else
+    echo "OK: focus command accepted (pos=$FOCUS), autofocus left ENABLED so the"
+    echo "    value may drift back. Use without --keep-autofocus to lock it."
+fi
 exit 0
