@@ -1,5 +1,11 @@
 # Building and Testing the YOLO Plugin Docker Image
 
+> **Hitting a build/deploy blocker?** Known Sage platform bugs and their
+> workarounds (arm64/Thor build failures, buildkit `/proc/acpi`, registry push
+> denied, side-loading, node control-plane, creds-in-argv cleanup) are tracked in
+> `~/AI-projects/Infra-problems-to-fix.md` (issue-ready writeups for the
+> cyberinfra team).
+
 How to build the Docker image, test it locally, and deploy it to
 a Sage node.
 
