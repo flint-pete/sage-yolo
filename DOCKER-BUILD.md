@@ -15,6 +15,24 @@
 How to build the Docker image, test it locally, and deploy it to
 a Sage node.
 
+> **Quick deploy (side-load — the working path).** Because ECR can't build this
+> plugin yet (Infra #3, above), deployment is scripted. From the repo root **on
+> the Thor node**, one command builds natively, imports into k3s, and registers
+> the ECR catalog record — version read straight from `sage.yaml`, nothing
+> hardcoded:
+>
+> ```bash
+> export SAGE_TOKEN=...            # Sage portal token (for the catalog register step)
+> scripts/deploy-sideload.sh                                    # build → import → register
+> scripts/deploy-sideload.sh --submit jobs/yolo-hummingcam-h00f.yaml   # + create/submit SES job
+> ```
+>
+> Add `--dry-run` to preview every step without executing. `--submit` also needs
+> `SES_USER_TOKEN` (write-scoped). Run `scripts/deploy-sideload.sh -h` for all
+> flags (`--version`, `--from-version`, `--skip-build`, `--skip-register`). The
+> manual equivalents are documented in full under **"Deploy path: build natively
+> on Thor + side-load into k3s"** below — the script just automates them.
+
 
 ## Prerequisites
 
