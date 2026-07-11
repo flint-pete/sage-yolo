@@ -157,9 +157,15 @@ if [ "$DO_BUILD" -eq 1 ]; then
   say "Step 2/4 — import into k3s containerd (~a few min)"
   run "sudo docker save '$TAG' | sudo k3s ctr images import -"
   if [ "$DRY_RUN" -eq 0 ]; then
-    sudo k3s ctr images ls | grep -q "$TAG" \
-      && ok "present in k3s: $TAG" \
-      || die "image not found in k3s after import — check the build/import output"
+    # Capture first, then match in pure bash. Do NOT pipe `ctr images ls` into
+    # `grep -q`: grep -q exits on first match and SIGPIPEs the still-writing ls;
+    # under `set -o pipefail` that 141 propagates and false-fails on success.
+    imgs="$(sudo k3s ctr images ls)"
+    if [[ "$imgs" == *"$TAG"* ]]; then
+      ok "present in k3s: $TAG"
+    else
+      die "image not found in k3s after import — check the build/import output"
+    fi
   fi
 else
   warn "Step 2 skipped (--skip-build)"
@@ -213,7 +219,7 @@ if [ -n "$SUBMIT_JOB" ]; then
     need sesctl
     create_out="$(sesctl --server "$SES_SERVER" --token "$SES_USER_TOKEN" create -f "$SUBMIT_JOB")"
     printf '%s\n' "$create_out"
-    JOB_ID="$(printf '%s' "$create_out" | grep -oE '[0-9]+' | head -n1)"
+    JOB_ID="$(printf '%s' "$create_out" | grep -oE '[0-9]+' | head -n1 || true)"
     [ -n "$JOB_ID" ] || die "could not parse job id from sesctl create output above."
     ok "created job id ${JOB_ID}"
     sesctl --server "$SES_SERVER" --token "$SES_USER_TOKEN" submit -j "$JOB_ID"
