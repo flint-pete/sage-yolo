@@ -396,8 +396,9 @@ automatically — you only need to export it manually for ad-hoc app.py runs.
 
 ### Building the Docker Image
 
-Build via ECR "Register and Build" (the portal builds from your GitHub repo —
-you do not `docker push` directly). For a quick local smoke test first:
+Deploy by building natively on Thor and side-loading into k3s — the ECR portal
+build does **not** work for this NVIDIA-base plugin yet (QEMU cross-build crash,
+Infra #3; see DOCKER-BUILD.md). For a quick local smoke test first:
 
 ```bash
 docker build --no-cache -t yolo-object-counter:0.3.1 .
@@ -405,12 +406,11 @@ docker run --rm --runtime=nvidia -e PYWAGGLE_LOG_DIR=/tmp/out \
     yolo-object-counter:0.3.1 --stream bottom_camera --continuous N
 ```
 
-Then register at https://portal.sagecontinuum.org → My Apps →
-Create App → enter your GitHub repo URL. ECR builds the image
-and assigns a registry tag like:
+The image is served to SES by side-loading it into the node's k3s containerd and
+registering an ECR catalog *metadata* record; the registry tag is:
 `registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1`
 
-See **DOCKER-BUILD.md** for the full workflow.
+See **DOCKER-BUILD.md** for the full build → register → side-load → submit workflow.
 
 ### Submitting a Job
 

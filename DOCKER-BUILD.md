@@ -1,12 +1,16 @@
 # Building and Testing the YOLO Plugin Docker Image
 
-> **Status (2026-07):** This plugin now builds via the standard Sage ECR
-> "Register and Build" pipeline (release 0.3.1). The Thor/arm64 blockers are
-> fixed — the CI team resolved the buildkit `/proc/acpi` runc bug **and** added a
-> **native arm64 build node**, so the NVIDIA-base image builds in ECR without the
-> old QEMU cross-build crash and without any `docker push`. The build-locally +
-> side-load workaround below is retained only as a historical/offline fallback.
-> Remaining platform notes are tracked in `~/AI-projects/Infra-problems-to-fix.md`.
+> **Status (2026-07):** The ECR portal build does **NOT** work for this plugin
+> yet. The buildkit `/proc/acpi` runc bug (Infra #2) is fixed, so `RUN` steps now
+> start — but this is an **NVIDIA/CUDA-base** plugin, and the pipeline still
+> cross-builds `linux/arm64` under **QEMU on x86**, which crashes on the CUDA base
+> (`qemu: uncaught target signal 6 (Aborted)` / exit 134). This is Infra #3 — a
+> **native arm64 builder does not exist yet** (verified 2026-07-10: the ECR build
+> of tag v0.3.1 failed at exactly this step). **Deploy path remains: build
+> natively on Thor + side-load into k3s** (see below). CPU-only plugins like
+> birdnet DO build in ECR now; NVIDIA-base ones (yolo, bioclip) do not.
+> Platform blockers tracked in `~/AI-projects/Infra-problems-to-fix.md` (#2 fixed,
+> #3 open).
 
 How to build the Docker image, test it locally, and deploy it to
 a Sage node.
@@ -370,74 +374,50 @@ subject + dedicated GPU → continuous; slowly-changing scene → one-shot.
 
 To switch modes, just deploy the other job file (see "Create + submit" below).
 
-### Deploy path: ECR "Register and Build" (standard)
+### Why the ECR portal build does NOT work for this plugin (yet)
 
-The Thor build blockers are fixed (native arm64 builder + buildkit `/proc/acpi`
-runc fix), so yolo deploys the standard way — no local build, no side-load:
+The standard Sage workflow is "Create App → Register and Build," where the ECR
+portal builds the image from your GitHub repo. **For this NVIDIA-base plugin that
+build still fails**, verified 2026-07-10 on tag v0.3.1:
 
-1. **Tag the release** (version must match `sage.yaml`):
-   ```bash
-   git tag -a v0.3.1 -m "yolo-object-counter 0.3.1" && git push origin v0.3.1
-   ```
-2. **Register + Build** via the ECR portal (Portal → My Apps → yolo-object-counter
-   → add version from GitHub) or `scripts/register-ecr-version.py`. ECR builds
-   `linux/arm64` natively from `flint-pete/sage-yolo` using `sage.yaml` +
-   `Dockerfile` (`nvcr.io/nvidia/pytorch` base — the native builder handles the
-   NVIDIA/CUDA image without QEMU). Make the app **public**, or SES returns
-   `registry ... does not exist in ECR`.
-3. **Create + submit the SES job** (needs a write-scoped SES token). **Pick the
-   job file for your mode** (see "Continuous vs One-shot" above):
-   - Continuous (default, for hummingbirds): `jobs/yolo-hummingcam-h00f.yaml`
-   - One-shot cron (slow scenes): `jobs/yolo-hummingcam-h00f-oneshot.yaml`
-   ```bash
-   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-       create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
-   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-       submit -j <job-id>
-   ```
-   > `create` uses `-f`/`--file-path`; `submit` takes `-j <numeric-id>`.
-   > `rm -s <id>` suspends, `rm <id>` removes. To switch modes: suspend + remove
-   > the old job, then create + submit the other job file.
-4. **Verify it fires and publishes.** The one-shot pod appears in the `ses`
-   namespace each tick, runs ~30-40s, exits, and is GC'd — confirm via the data
-   API (continuous jobs publish steadily):
-   ```bash
-   curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
-     -H 'Content-Type: application/json' \
-     -d '{"start":"-15m","filter":{"vsn":"H00F","name":"env.count.total"}}'
-   ```
-   Record metadata identifies the job/image: `"job": "yolo-object-counter-<id>"`
-   and `"plugin": "registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1"`.
+- The buildkit `/proc/acpi` runc bug (Infra #2) is **fixed** — `RUN` steps now
+  start (pip downloads, etc. run for a while).
+- BUT the ECR pipeline runs on **x86_64** and cross-builds `linux/arm64` under
+  **QEMU emulation** (`buildctl ... --opt platform=linux/arm64`). The NVIDIA base
+  (`nvcr.io/nvidia/pytorch:25.08-py3`) contains aarch64 binaries QEMU cannot
+  emulate; `pip install` crashes with `qemu: uncaught target signal 6 (Aborted)`,
+  build **exit 134**. This is **Infra #3**, still open — there is **no native
+  arm64 builder** yet.
 
-### Re-deploying after a code change (new version)
+CPU-only plugins (birdnet, `python:3.12-slim`) DO build in ECR now — they have
+native wheels and no CUDA, so QEMU handles them. GPU/NVIDIA plugins (yolo,
+bioclip) do not. Until a native arm64 build node is added, use side-load below.
 
-Bump the version everywhere (`sage.yaml`, `Makefile`, job YAML), tag it, push the
-tag, and re-Register and Build in ECR. Update the job YAML's `image:` to the new
-tag and re-submit. No node-local steps needed.
+### Deploy path: build natively on Thor + side-load into k3s (WORKING)
 
-### Local build + side-load (historical fallback — normally NOT needed)
+Because SES pods on Thor use **`imagePullPolicy: IfNotPresent`**, the scheduler
+uses a locally-cached image if one is present in k3s containerd under the exact
+registry-qualified name — it never has to pull. So we build natively on Thor
+(arm64, no QEMU), import into k3s, and register only the catalog *metadata* so SES
+validation passes. No registry push, no portal build.
 
-> Retained for local testing and offline/air-gapped bring-up. Not the deploy
-> route now that ECR builds yolo natively. It was the workaround while the Thor
-> build was broken (buildkit `/proc/acpi` runc bug + QEMU cross-build crash on
-> the NVIDIA base + pull-only portal tokens) — all resolved as of 0.3.1.
-
-<details>
-<summary>Expand: build natively on Thor → import into k3s</summary>
-
-Because SES pods on Thor use `imagePullPolicy: IfNotPresent`, a locally-cached
-image present in k3s containerd under the exact registry-qualified name is used
-without a registry pull. Build natively on Thor (arm64, no QEMU), import into
-k3s, then register a catalog metadata record so SES validation passes:
+**Step 1 — build natively on Thor + import into k3s:**
 
 ```bash
 cd ~/sage-yolo && git pull
+# Full registry-path tag so it matches the job YAML's image: field exactly:
 sudo docker build -t registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1 .
 sudo docker save registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1 \
   | sudo k3s ctr images import -
 sudo k3s ctr images ls | grep yolo-object-counter   # expect io.cri-containerd.image=managed
+```
 
-# catalog metadata record (only for a deliberately side-loaded image):
+**Step 2 — register the ECR catalog metadata record** (SES validates the job's
+image against the catalog; without a record, `sesctl submit` fails with
+`[...yolo-object-counter:0.3.1 does not exist in ECR]`). This registers metadata
+only — it does NOT need the portal build to succeed:
+
+```bash
 python3 scripts/register-ecr-version.py \
     --namespace beckman --name yolo-object-counter \
     --from-version 0.3.0 --version 0.3.1 \
@@ -445,9 +425,50 @@ python3 scripts/register-ecr-version.py \
     --token "$SAGE_TOKEN"
 ```
 
-Then create + submit the job as usual. The pod events show *"already present on
-machine"*, confirming the side-loaded image was used.
-</details>
+Make the app **public**, or SES returns `registry ... does not exist in ECR`.
+
+**Step 3 — create + submit the SES job** (needs a write-scoped SES token). **Pick
+the job file for your mode** (see "Continuous vs One-shot" above):
+
+- Continuous (default, for hummingbirds): `jobs/yolo-hummingcam-h00f.yaml`
+- One-shot cron (slow scenes): `jobs/yolo-hummingcam-h00f-oneshot.yaml`
+
+```bash
+sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+    create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
+sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+    submit -j <job-id>
+```
+
+> `create` uses `-f`/`--file-path`; `submit` takes `-j <numeric-id>`. `rm -s <id>`
+> suspends, `rm <id>` removes. To switch modes: suspend + remove the old job, then
+> create + submit the other job file.
+
+**Step 4 — verify it fires and publishes** via the data API (the pod events show
+*"already present on machine"*, confirming the side-loaded image was used):
+
+```bash
+curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{"start":"-15m","filter":{"vsn":"H00F","name":"env.count.total"}}'
+```
+
+Record metadata identifies the job/image: `"job": "yolo-object-counter-<id>"` and
+`"plugin": "registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1"`.
+
+### Re-deploying after a code change (new version)
+
+Bump the version everywhere (`sage.yaml`, `Makefile`, job YAML), then repeat
+build → side-load with the new tag + register the catalog record. Because the tag
+changes, k3s uses the new local image on the next tick; update the job YAML's
+`image:` and re-submit.
+
+### The durable fix (escalate to the ECR/cyberinfra team)
+
+Add a **native arm64 build node** to the Jenkins/ECR pipeline (Infra #3) so the
+portal "Register and Build" path produces arm64 NVIDIA images without QEMU. That
+removes the manual side-load step for every Thor-targeted GPU plugin (yolo,
+bioclip). The `/proc/acpi` fix (#2) already landed; #3 is the remaining blocker.
 
 See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
 

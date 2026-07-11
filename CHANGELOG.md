@@ -5,12 +5,15 @@ All notable changes to the `yolo-object-counter` Sage plugin.
 ## 0.3.1 — 2026-07-10
 
 ### Changed
-- **Deploy path is now standard ECR "Register and Build".** The Thor/arm64 build
-  blockers are resolved: the CI team fixed the buildkit `/proc/acpi` runc bug and
-  added a **native arm64 build node**, so the ECR portal now builds this
-  NVIDIA-base plugin directly (no more QEMU cross-build crash, no `docker push`
-  needed). The manual build-locally + side-load-into-k3s workaround is retired to
-  a historical fallback. No plugin code change — docs/build-metadata only.
+- **Docs/version bookkeeping only — deploy path UNCHANGED (still side-load).**
+  The CI team fixed the buildkit `/proc/acpi` runc bug (Infra #2), so `RUN` steps
+  now start. BUT this NVIDIA-base plugin STILL cannot build in the ECR portal:
+  the pipeline cross-builds `linux/arm64` under QEMU on x86, and the NVIDIA CUDA
+  base crashes with `qemu: uncaught target signal 6 (Aborted)` / exit 134 during
+  `pip` (Infra #3 — a native arm64 builder does NOT yet exist; verified by the
+  failed ECR build of this exact tag, 2026-07-10). So yolo continues to deploy by
+  building natively on Thor and side-loading into k3s. Version bumped + image refs
+  normalized to `beckman/…:0.3.1`; no plugin code change.
 
 ## 0.3.0 — 2026-06-24
 
@@ -80,9 +83,13 @@ All notable changes to the `yolo-object-counter` Sage plugin.
 
 ### Deployment note (arm64 / Thor)
 
-As of **0.3.1 (2026-07)** this plugin builds via the standard ECR "Register and
-Build" pipeline (native arm64 builder) and deploys like any other Sage app —
-no local build, no side-load. The historical build-locally + side-load workaround
-(used while the Thor build was broken) is documented in `DOCKER-BUILD.md` under a
-clearly-marked fallback section. See `DOCKER-BUILD.md` for the current
-build → register → submit workflow.
+This NVIDIA-base plugin is built natively on Thor and **side-loaded** into the
+node's k3s containerd (`docker save | sudo k3s ctr images import -`), because the
+ECR portal build still fails: it cross-builds `linux/arm64` under QEMU on x86 and
+the CUDA base crashes (`signal 6` / exit 134). The buildkit `/proc/acpi` bug
+(Infra #2) is fixed, but the QEMU-on-NVIDIA crash (Infra #3) is NOT — no native
+arm64 builder exists yet (verified 2026-07-10). The ECR **catalog** version is
+registered separately via `scripts/register-ecr-version.py` (metadata SES
+validates against); SES pods use `imagePullPolicy=IfNotPresent`, so the
+side-loaded image serves the pull. See `DOCKER-BUILD.md` for the full
+build → register → side-load → submit workflow.
