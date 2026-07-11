@@ -4,6 +4,26 @@ All notable changes to the `yolo-object-counter` Sage plugin.
 
 ## 0.3.1 — 2026-07-10
 
+### Added
+- **`scripts/deploy-sideload.sh` — one-command side-load deploy** (2026-07-11).
+  Wraps the 4-step Thor chore (build natively → import into k3s → register ECR
+  catalog metadata → opt-in `--submit` SES job) into a single idempotent script.
+  Reads name/namespace/version/source.url straight from `sage.yaml` — nothing
+  hardcoded, so a version bump needs zero edits to the script (`--version`
+  overrides). Auto-detects `--from-version` from the ECR catalog; warns on
+  job-YAML image-tag drift and hard-refuses `--submit` on a mismatched tag;
+  `--dry-run` previews every step with no tokens/network. Tokens are demanded
+  only by the step that uses them (`SAGE_TOKEN` register, `SES_USER_TOKEN`
+  submit). See the "Quick deploy (side-load)" banner in `DOCKER-BUILD.md`.
+
+### Fixed
+- **deploy-sideload.sh Step-2 SIGPIPE false-fail** (2026-07-11). The post-import
+  check `k3s ctr images ls | grep -q "$TAG"` false-reported "image not found" on
+  a successful import: `grep -q` exits on first match and SIGPIPEs the still-
+  writing `ls`, and under `set -o pipefail` that 141 propagated to `|| die`.
+  Fixed by capturing `ls` to a var and matching with pure-bash `[[ == *tag* ]]`
+  (no pipe, no SIGPIPE). Caught only by running on live H00F infra.
+
 ### Changed
 - **Docs/version bookkeeping only — deploy path UNCHANGED (still side-load).**
   The CI team fixed the buildkit `/proc/acpi` runc bug (Infra #2), so `RUN` steps
@@ -13,7 +33,17 @@ All notable changes to the `yolo-object-counter` Sage plugin.
   `pip` (Infra #3 — a native arm64 builder does NOT yet exist; verified by the
   failed ECR build of this exact tag, 2026-07-10). So yolo continues to deploy by
   building natively on Thor and side-loading into k3s. Version bumped + image refs
-  normalized to `beckman/…:0.3.1`; no plugin code change.
+  normalized to `beckman/…:0.3.1`; no plugin code change (byte-identical to 0.3.0
+  — verified `git diff 0.3.0..0.3.1 -- app.py save_match.py Dockerfile` is empty).
+
+### Deployed
+- **Cut over on H00F 2026-07-11 12:11 UTC** via `deploy-sideload.sh`. Built +
+  imported 0.3.1 (10.7 GiB, `io.cri-containerd.image=managed`); catalog record
+  for 0.3.1 already registered. Suspended old job **5670** (0.3.0) as a one-command
+  rollback point (`sesctl rm -s`), created + submitted job **5679** (0.3.1).
+  Verified 0.3.1 publishes to Beehive via a one-shot on the fresh image (record
+  `env.count.total`, `meta.task=yolo031-verify`, `vsn=H00F` — negative path, empty
+  scene → value 0). First production windowed cycle fires at the next `:00`.
 
 ## 0.3.0 — 2026-06-24
 
@@ -91,5 +121,10 @@ the CUDA base crashes (`signal 6` / exit 134). The buildkit `/proc/acpi` bug
 arm64 builder exists yet (verified 2026-07-10). The ECR **catalog** version is
 registered separately via `scripts/register-ecr-version.py` (metadata SES
 validates against); SES pods use `imagePullPolicy=IfNotPresent`, so the
-side-loaded image serves the pull. See `DOCKER-BUILD.md` for the full
-build → register → side-load → submit workflow.
+side-loaded image serves the pull.
+
+**Use `scripts/deploy-sideload.sh` to run this whole path in one command** (build
+→ import → register, plus opt-in `--submit`); it reads the version from
+`sage.yaml`, so no hardcoded tags. See `DOCKER-BUILD.md` for the "Quick deploy
+(side-load)" banner and the full manual build → register → side-load → submit
+reference it automates.

@@ -419,6 +419,11 @@ registry-qualified name — it never has to pull. So we build natively on Thor
 (arm64, no QEMU), import into k3s, and register only the catalog *metadata* so SES
 validation passes. No registry push, no portal build.
 
+> **`scripts/deploy-sideload.sh` automates Steps 1–3 below** (and Step 4 with
+> `--submit`). Prefer it — the manual steps here are the reference it wraps, kept
+> for when you need to run a step by hand. The script reads the version from
+> `sage.yaml` (no hardcoded tags) and guards against job-YAML tag drift.
+
 **Step 1 — build natively on Thor + import into k3s:**
 
 ```bash
