@@ -22,7 +22,7 @@
 # Note: each tick reloads the YOLO11x model (~5 GB), so very fast cron rates are
 # wasteful — if you need <2 min sampling, use the CONTINUOUS job instead.
 #
-# Image: ECR app beckman/yolo-object-counter:0.2.0
+# Image: ECR app beckman/yolo-object-counter:0.3.1
 # Camera: Reolink RLC-811A snapshot CGI (creds as query params).
 #
 # Submit (with a write-scoped token):
@@ -33,7 +33,7 @@ name: yolo-hummingcam-oneshot
 plugins:
   - name: yolo-object-counter
     pluginSpec:
-      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1
       args:
         - "--snapshot-url"
         - "http://10.107.0.221:10000/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=sage&password=SageCam!&width=640&height=360"

@@ -6,7 +6,7 @@ name: yolo-counter-chicago
 plugins:
   - name: yolo-object-counter
     pluginSpec:
-      image: registry.sagecontinuum.org/waggle/yolo-object-counter:0.2.0
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1
       args:
         - "--stream"
         - "bottom_camera"

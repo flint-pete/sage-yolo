@@ -2,6 +2,16 @@
 
 All notable changes to the `yolo-object-counter` Sage plugin.
 
+## 0.3.1 — 2026-07-10
+
+### Changed
+- **Deploy path is now standard ECR "Register and Build".** The Thor/arm64 build
+  blockers are resolved: the CI team fixed the buildkit `/proc/acpi` runc bug and
+  added a **native arm64 build node**, so the ECR portal now builds this
+  NVIDIA-base plugin directly (no more QEMU cross-build crash, no `docker push`
+  needed). The manual build-locally + side-load-into-k3s workaround is retired to
+  a historical fallback. No plugin code change — docs/build-metadata only.
+
 ## 0.3.0 — 2026-06-24
 
 ### Added
@@ -70,10 +80,9 @@ All notable changes to the `yolo-object-counter` Sage plugin.
 
 ### Deployment note (arm64 / Thor)
 
-This plugin is built locally and **sideloaded** into the node's k3s containerd
-(`docker save | sudo k3s ctr images import -`) because the ECR portal's arm64
-NVIDIA-base build crashes under QEMU. The ECR **catalog** version is registered
-separately via `scripts/register-ecr-version.py` (the metadata record SES
-validates against). SES pods use `imagePullPolicy=IfNotPresent`, so the
-sideloaded image serves the actual pull. See `DOCKER-BUILD.md` for the full
-build → register → sideload → submit workflow.
+As of **0.3.1 (2026-07)** this plugin builds via the standard ECR "Register and
+Build" pipeline (native arm64 builder) and deploys like any other Sage app —
+no local build, no side-load. The historical build-locally + side-load workaround
+(used while the Thor build was broken) is documented in `DOCKER-BUILD.md` under a
+clearly-marked fallback section. See `DOCKER-BUILD.md` for the current
+build → register → submit workflow.

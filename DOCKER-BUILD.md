@@ -1,10 +1,12 @@
 # Building and Testing the YOLO Plugin Docker Image
 
-> **Hitting a build/deploy blocker?** Known Sage platform bugs and their
-> workarounds (arm64/Thor build failures, buildkit `/proc/acpi`, registry push
-> denied, side-loading, node control-plane, creds-in-argv cleanup) are tracked in
-> `~/AI-projects/Infra-problems-to-fix.md` (issue-ready writeups for the
-> cyberinfra team).
+> **Status (2026-07):** This plugin now builds via the standard Sage ECR
+> "Register and Build" pipeline (release 0.3.1). The Thor/arm64 blockers are
+> fixed — the CI team resolved the buildkit `/proc/acpi` runc bug **and** added a
+> **native arm64 build node**, so the NVIDIA-base image builds in ECR without the
+> old QEMU cross-build crash and without any `docker push`. The build-locally +
+> side-load workaround below is retained only as a historical/offline fallback.
+> Remaining platform notes are tracked in `~/AI-projects/Infra-problems-to-fix.md`.
 
 How to build the Docker image, test it locally, and deploy it to
 a Sage node.
@@ -73,7 +75,7 @@ compatible" warnings.
 
 ```bash
 cd ~/sage-yolo
-docker build --no-cache -t yolo-object-counter:0.2.0 .
+docker build --no-cache -t yolo-object-counter:0.3.1 .
 ```
 
 Then transfer to Thor (see "Transfer to Thor" below).
@@ -89,7 +91,7 @@ git clone https://github.com/flint-pete/sage-yolo.git ~/sage-yolo
 
 # Build (sudo required for Docker on Thor)
 cd ~/sage-yolo
-sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+sudo docker build --no-cache -t yolo-object-counter:0.3.1 .
 ```
 
 To rebuild after code changes:
@@ -97,7 +99,7 @@ To rebuild after code changes:
 ```bash
 cd ~/sage-yolo
 git pull
-sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+sudo docker build --no-cache -t yolo-object-counter:0.3.1 .
 ```
 
 This is the fastest iteration loop — edit code, `git push` from
@@ -128,7 +130,7 @@ Before deploying, verify the image works with GPU:
 
 ```bash
 # Verify the image exists and app.py runs
-sudo docker run --rm --runtime=nvidia yolo-object-counter:0.2.0 --help
+sudo docker run --rm --runtime=nvidia yolo-object-counter:0.3.1 --help
 ```
 
 ### Batch test with test images
@@ -143,7 +145,7 @@ sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-test-output:/output \
     -v ~/sage-yolo/tests/test-images:/images:ro \
-    yolo-object-counter:0.2.0 \
+    yolo-object-counter:0.3.1 \
     --image-dir /images --continuous N
 
 # Check results
@@ -159,7 +161,7 @@ mkdir -p ~/yolo-camera-test
 sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-camera-test:/output \
-    yolo-object-counter:0.2.0 \
+    yolo-object-counter:0.3.1 \
     --stream "rtsp://admin:PASSWORD@CAMERA_IP:554/h264Preview_01_sub" \
     --interval 30 --continuous Y
 
@@ -186,7 +188,7 @@ mkdir -p ~/yolo-camera-test
 sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-camera-test:/output \
-    yolo-object-counter:0.2.0 \
+    yolo-object-counter:0.3.1 \
     --snapshot-url "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=USER&password=PASS&width=640&height=360" \
     --continuous N
 
@@ -214,7 +216,7 @@ If you built on DGX Spark (not on Thor), transfer the image:
 
 ```bash
 # On the build machine
-docker save yolo-object-counter:0.2.0 | gzip > /tmp/yolo-object-counter.tar.gz
+docker save yolo-object-counter:0.3.1 | gzip > /tmp/yolo-object-counter.tar.gz
 scp /tmp/yolo-object-counter.tar.gz beckman@thor-node:~/
 
 # On Thor — load into Docker
@@ -232,7 +234,7 @@ pluginctl uses k3s/containerd, not Docker. The image must be
 imported even if it was built locally with Docker:
 
 ```bash
-sudo docker save yolo-object-counter:0.2.0 | sudo k3s ctr images import -
+sudo docker save yolo-object-counter:0.3.1 | sudo k3s ctr images import -
 ```
 
 This takes ~6 minutes for the full image. Verify:
@@ -248,7 +250,7 @@ sudo k3s ctr images ls | grep yolo
 ```bash
 sudo pluginctl deploy -n yolo-hummingcam \
     --resource 'memory=8Gi,limit.memory=16Gi' \
-    docker.io/library/yolo-object-counter:0.2.0 \
+    docker.io/library/yolo-object-counter:0.3.1 \
     -- --stream bottom_camera --interval 60 --continuous Y
 ```
 
@@ -257,7 +259,7 @@ sudo pluginctl deploy -n yolo-hummingcam \
 ```bash
 sudo pluginctl deploy -n yolo-hummingcam \
     --resource 'memory=8Gi,limit.memory=16Gi' \
-    docker.io/library/yolo-object-counter:0.2.0 \
+    docker.io/library/yolo-object-counter:0.3.1 \
     -- --snapshot-url "http://IP:PORT/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=snap&user=USER&password=PASS&width=640&height=360" \
        --interval 60 --continuous Y --upload-image Y
 ```
@@ -304,19 +306,19 @@ sudo pluginctl rm yolo-hummingcam
 ```bash
 cd ~/sage-yolo
 git pull
-sudo docker build -t yolo-object-counter:0.2.0 .
+sudo docker build -t yolo-object-counter:0.3.1 .
 
 # If only app.py changed, skip --no-cache (uses cached layers, ~5 seconds)
 # If Dockerfile or requirements.txt changed, use --no-cache
 
 # Re-import into k3s
-sudo docker save yolo-object-counter:0.2.0 | sudo k3s ctr images import -
+sudo docker save yolo-object-counter:0.3.1 | sudo k3s ctr images import -
 
 # Remove old deployment and redeploy
 sudo pluginctl rm yolo-hummingcam
 sudo pluginctl deploy -n yolo-hummingcam \
     --resource 'memory=8Gi,limit.memory=16Gi' \
-    docker.io/library/yolo-object-counter:0.2.0 \
+    docker.io/library/yolo-object-counter:0.3.1 \
     -- --snapshot-url "..." --interval 60 --continuous Y --upload-image Y
 ```
 
@@ -368,175 +370,84 @@ subject + dedicated GPU → continuous; slowly-changing scene → one-shot.
 
 To switch modes, just deploy the other job file (see "Create + submit" below).
 
-### Why the normal ECR portal build does NOT work for this plugin
+### Deploy path: ECR "Register and Build" (standard)
 
-The documented Sage workflow is "Create App → Register and Build App" and
-the ECR portal builds the image from your GitHub repo. **That build fails
-for any arm64 plugin on the NVIDIA base image**, and here is why:
+The Thor build blockers are fixed (native arm64 builder + buildkit `/proc/acpi`
+runc fix), so yolo deploys the standard way — no local build, no side-load:
 
-- The ECR/Jenkins build pipeline runs on **x86_64** hardware.
-- To produce a `linux/arm64` image it cross-builds under **QEMU emulation**.
-- The NVIDIA base (`nvcr.io/nvidia/pytorch:25.08-py3`) contains aarch64
-  binaries that QEMU cannot emulate; the `pip install` step crashes with
-  `qemu: uncaught target signal 6 (Aborted) - core dumped`, build exit 134.
+1. **Tag the release** (version must match `sage.yaml`):
+   ```bash
+   git tag -a v0.3.1 -m "yolo-object-counter 0.3.1" && git push origin v0.3.1
+   ```
+2. **Register + Build** via the ECR portal (Portal → My Apps → yolo-object-counter
+   → add version from GitHub) or `scripts/register-ecr-version.py`. ECR builds
+   `linux/arm64` natively from `flint-pete/sage-yolo` using `sage.yaml` +
+   `Dockerfile` (`nvcr.io/nvidia/pytorch` base — the native builder handles the
+   NVIDIA/CUDA image without QEMU). Make the app **public**, or SES returns
+   `registry ... does not exist in ECR`.
+3. **Create + submit the SES job** (needs a write-scoped SES token). **Pick the
+   job file for your mode** (see "Continuous vs One-shot" above):
+   - Continuous (default, for hummingbirds): `jobs/yolo-hummingcam-h00f.yaml`
+   - One-shot cron (slow scenes): `jobs/yolo-hummingcam-h00f-oneshot.yaml`
+   ```bash
+   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+       create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
+   sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
+       submit -j <job-id>
+   ```
+   > `create` uses `-f`/`--file-path`; `submit` takes `-j <numeric-id>`.
+   > `rm -s <id>` suspends, `rm <id>` removes. To switch modes: suspend + remove
+   > the old job, then create + submit the other job file.
+4. **Verify it fires and publishes.** The one-shot pod appears in the `ses`
+   namespace each tick, runs ~30-40s, exits, and is GC'd — confirm via the data
+   API (continuous jobs publish steadily):
+   ```bash
+   curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
+     -H 'Content-Type: application/json' \
+     -d '{"start":"-15m","filter":{"vsn":"H00F","name":"env.count.total"}}'
+   ```
+   Record metadata identifies the job/image: `"job": "yolo-object-counter-<id>"`
+   and `"plugin": "registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1"`.
 
-So the portal build is a dead end for Thor-targeted NVIDIA plugins until
-the ECR pipeline gets a **native arm64 builder**.
+### Re-deploying after a code change (new version)
 
+Bump the version everywhere (`sage.yaml`, `Makefile`, job YAML), tag it, push the
+tag, and re-Register and Build in ECR. Update the job YAML's `image:` to the new
+tag and re-submit. No node-local steps needed.
 
+### Local build + side-load (historical fallback — normally NOT needed)
 
-### Why `docker push` to the registry also does NOT work (yet)
+> Retained for local testing and offline/air-gapped bring-up. Not the deploy
+> route now that ECR builds yolo natively. It was the workaround while the Thor
+> build was broken (buildkit `/proc/acpi` runc bug + QEMU cross-build crash on
+> the NVIDIA base + pull-only portal tokens) — all resolved as of 0.3.1.
 
-You might think: build natively on Thor (arm64, no QEMU), then push to
-`registry.sagecontinuum.org`. The build succeeds, but the push is denied:
+<details>
+<summary>Expand: build natively on Thor → import into k3s</summary>
 
-```
-denied: requested access to the resource is denied
-```
-
-`docker login registry.sagecontinuum.org` with a Sage portal access token
-**authenticates** (login succeeds) but the token is **read/pull-only** — it
-lacks push/write scope to the `beckman` namespace. Registry writes are
-reserved for the Jenkins build pipeline. Getting push access (or a native
-arm64 builder) is an ECR-team request — see "Systemic fix" below.
-
-### The working workaround: build locally + sideload into k3s
-
-Because SES pods on Thor use **`imagePullPolicy: IfNotPresent`**, the
-scheduler will use a locally-cached image if one is already present in k3s
-containerd under the exact registry-qualified name — it never has to pull
-from the registry. So we build natively on Thor, tag with the full
-registry path, and import it straight into k3s. No registry push needed.
-
-**Step 1 — build natively on Thor (arm64, no QEMU):**
+Because SES pods on Thor use `imagePullPolicy: IfNotPresent`, a locally-cached
+image present in k3s containerd under the exact registry-qualified name is used
+without a registry pull. Build natively on Thor (arm64, no QEMU), import into
+k3s, then register a catalog metadata record so SES validation passes:
 
 ```bash
-cd ~/sage-yolo
-git pull
-sudo docker build -t registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0 .
-```
-
-Note the tag is the **full registry path**, not the bare
-`yolo-object-counter:0.2.0`. This must exactly match the `image:` field in
-the job YAML so k3s finds the cached copy.
-
-**Step 2 — sideload into k3s containerd:**
-
-```bash
-sudo docker save registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0 \
+cd ~/sage-yolo && git pull
+sudo docker build -t registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1 .
+sudo docker save registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1 \
   | sudo k3s ctr images import -
-```
+sudo k3s ctr images ls | grep yolo-object-counter   # expect io.cri-containerd.image=managed
 
-**Step 3 — verify it landed (and is CRI-managed):**
-
-```bash
-sudo k3s ctr images ls | grep yolo-object-counter
-# Expect a line tagged registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0
-# with io.cri-containerd.image=managed  (that label = k8s/SES can see it)
-```
-
-### Step 4 — register the version in the ECR catalog (metadata only)
-
-SES validates a job's image against the ECR app **catalog**
-(ecr.sagecontinuum.org), NOT against the raw Docker registry or the image
-you sideloaded. If the catalog has no record for your exact version,
-`sesctl submit` fails with:
-
-```
-[registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0 does not exist in ECR]
-```
-
-You do **not** need the portal UI (and you do **not** need the portal
-*build* to succeed — for this NVIDIA-base plugin it crashes under QEMU
-anyway) — you only need the catalog metadata record. Register it directly
-via the ECR API with the included helper script:
-
-```bash
+# catalog metadata record (only for a deliberately side-loaded image):
 python3 scripts/register-ecr-version.py \
-    --namespace beckman \
-    --name yolo-object-counter \
-    --from-version 0.2.0 \
-    --version 0.2.0 \
+    --namespace beckman --name yolo-object-counter \
+    --from-version 0.3.0 --version 0.3.1 \
     --git-url https://github.com/flint-pete/sage-yolo.git \
     --token "$SAGE_TOKEN"
 ```
 
-(For a *new* version, set `--from-version` to an already-registered
-version to clone, and `--version` to the new one.)
-
-The script clones an existing version's catalog record, bumps the version
-and git source, and POSTs it to `/api/submit` using the
-`Authorization: Sage <token>` header. It's idempotent (re-running a version
-that already exists is a no-op) and prints the resulting catalog listing.
-
-> **Under the hood:** that's a `POST https://ecr.sagecontinuum.org/api/submit`
-> with your Sage portal token. The one required field the API insists on is
-> `description`. The catalog record only satisfies SES validation — the
-> actual image still comes from your sideloaded copy via
-> `imagePullPolicy: IfNotPresent`.
-
-If you prefer the UI: Portal → My Apps → the app → add the version from
-GitHub. The portal *build* will fail (QEMU), but the catalog record still
-gets created, which is all SES needs.
-
-Either way, make the app **public** or SES returns
-`registry does not exist in ECR`.
-
-**Step 5 — create + submit the SES job** (needs a write-scoped SES
-token in your interactive shell). **Pick the job file for your mode** (see
-"Continuous vs One-shot" above):
-
-- Continuous (default, for hummingbirds): `jobs/yolo-hummingcam-h00f.yaml`
-- One-shot cron (slow scenes): `jobs/yolo-hummingcam-h00f-oneshot.yaml`
-
-```bash
-# Continuous (recommended for the bird cam):
-sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-    create -f jobs/yolo-hummingcam-h00f.yaml      # returns a numeric job ID
-sesctl --server https://es.sagecontinuum.org --token "$SES_USER_TOKEN" \
-    submit -j <job-id>
-
-# …or one-shot cron instead (swap the file):
-#   create -f jobs/yolo-hummingcam-h00f-oneshot.yaml
-```
-
-To switch an already-running job between modes: suspend + remove the old
-job (`sesctl ... rm -s <id>` then `sesctl ... rm <id>`), then create +
-submit the other job file.
-
-**Step 6 — verify it fires and publishes.** The pod appears in the `ses`
-namespace each tick, runs ~30-40s, exits (one-shot), and is GC'd — so it's
-invisible between ticks. Confirm via the data API instead:
-
-```bash
-curl -s -X POST https://data.sagecontinuum.org/api/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{"start":"-15m","filter":{"vsn":"H00F","name":"env.count.total"}}'
-```
-
-The proof it's the SES job (not a leftover hand-deployed pod) is in the
-record metadata: `"job": "yolo-object-counter-<id>"` and
-`"plugin": "registry.sagecontinuum.org/beckman/yolo-object-counter:0.2.0"`
-("already present on machine" in the pod events confirms the sideload hit).
-
-### Re-deploying after a code change (new version)
-
-Bump the version everywhere (sage.yaml, Makefile, job YAML), then repeat
-build → sideload with the new tag. Because the tag changes, k3s pulls the
-new local image on the next tick automatically; no job re-submit needed if
-the job YAML already points at the new tag (otherwise update + re-submit).
-
-### Systemic fix (escalate to the ECR/cyberinfra team)
-
-The sideload workaround is manual and per-node. The durable fix is one of:
-
-- **(a)** Grant push/write access to `registry.sagecontinuum.org/beckman/`
-  for a Sage portal token, so `docker push` works after a native Thor build; or
-- **(b)** Add a **native arm64 build node** to the Jenkins ECR pipeline so
-  the portal "Register and Build" path works without QEMU.
-
-Either unblocks every Thor-targeted NVIDIA plugin (yolo, bioclip, birdnet)
-and removes the manual sideload step entirely.
+Then create + submit the job as usual. The pod events show *"already present on
+machine"*, confirming the side-loaded image was used.
+</details>
 
 See: https://sagecontinuum.org/docs/tutorials/edge-apps/publishing-to-ecr
 

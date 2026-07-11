@@ -13,7 +13,7 @@ git clone https://github.com/flint-pete/sage-yolo.git ~/sage-yolo
 
 # Build the Docker image
 cd ~/sage-yolo
-sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+sudo docker build --no-cache -t yolo-object-counter:0.3.1 .
 
 # Run against test images
 mkdir -p ~/yolo-test-output
@@ -21,7 +21,7 @@ sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-test-output:/output \
     -v ~/sage-yolo/tests/test-images:/images:ro \
-    yolo-object-counter:0.2.0 \
+    yolo-object-counter:0.3.1 \
     --image-dir /images --continuous N
 
 # Check results
@@ -34,7 +34,7 @@ To iterate after code changes:
 ```bash
 cd ~/sage-yolo
 git pull
-sudo docker build --no-cache -t yolo-object-counter:0.2.0 .
+sudo docker build --no-cache -t yolo-object-counter:0.3.1 .
 ```
 
 For the full Docker build reference (base image, OpenCV fix,
@@ -52,7 +52,7 @@ mkdir -p ~/yolo-camera-test
 sudo docker run --rm --runtime=nvidia \
     -e PYWAGGLE_LOG_DIR=/output \
     -v ~/yolo-camera-test:/output \
-    yolo-object-counter:0.2.0 \
+    yolo-object-counter:0.3.1 \
     --stream "rtsp://admin:PASSWORD@CAMERA_IP:554/h264Preview_01_sub" \
     --interval 30 --continuous Y
 ```
@@ -103,7 +103,7 @@ sudo k3s ctr images import ~/yolo-object-counter.tar.gz
 
 # Deploy
 sudo pluginctl deploy -n yolo-counter \
-    docker.io/library/yolo-object-counter:0.2.0 \
+    docker.io/library/yolo-object-counter:0.3.1 \
     -- --stream bottom_camera --interval 30 --continuous Y
 
 # Monitor
@@ -145,7 +145,7 @@ Each line in `data.ndjson` looks like:
 rm -rf ~/yolo-test-output ~/yolo-camera-test
 
 # Remove the Docker image (to free disk space)
-sudo docker rmi yolo-object-counter:0.2.0
+sudo docker rmi yolo-object-counter:0.3.1
 
 # Remove the cloned repo
 rm -rf ~/sage-yolo

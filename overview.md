@@ -396,20 +396,19 @@ automatically — you only need to export it manually for ad-hoc app.py runs.
 
 ### Building the Docker Image
 
-Build locally, then publish via the Sage portal (ECR builds from
-your GitHub repo — you do not `docker push` directly):
+Build via ECR "Register and Build" (the portal builds from your GitHub repo —
+you do not `docker push` directly). For a quick local smoke test first:
 
 ```bash
-# Build and test locally first:
-docker build --no-cache -t yolo-object-counter:0.2.0 .
+docker build --no-cache -t yolo-object-counter:0.3.1 .
 docker run --rm --runtime=nvidia -e PYWAGGLE_LOG_DIR=/tmp/out \
-    yolo-object-counter:0.2.0 --stream bottom_camera --continuous N
+    yolo-object-counter:0.3.1 --stream bottom_camera --continuous N
 ```
 
 Then register at https://portal.sagecontinuum.org → My Apps →
 Create App → enter your GitHub repo URL. ECR builds the image
 and assigns a registry tag like:
-`registry.sagecontinuum.org/flint-pete/yolo-object-counter:0.2.0`
+`registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1`
 
 See **DOCKER-BUILD.md** for the full workflow.
 
@@ -422,7 +421,7 @@ name: yolo-bird-counter
 plugins:
   - name: yolo-object-counter
     pluginSpec:
-      image: registry.sagecontinuum.org/waggle/yolo-object-counter:0.2.0
+      image: registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1
       args:
         - "--stream"
         - "bottom_camera"
@@ -440,13 +439,13 @@ successcriteria:
   - WallClock('7day')
 ```
 
-Submit:
+Submit (note actual sesctl flags — `create -f`, `submit -j <numeric-id>`):
 
 ```bash
 export SES_HOST=https://es.sagecontinuum.org
 export SES_USER_TOKEN=<your-token>
-sesctl create --from-file yolo-bird-counter-job.yaml
-sesctl sub yolo-bird-counter
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" create -f yolo-bird-counter-job.yaml
+sesctl --server "$SES_HOST" --token "$SES_USER_TOKEN" submit -j <job-id>
 ```
 
 ### On-Node Testing with pluginctl
@@ -455,7 +454,7 @@ sesctl sub yolo-bird-counter
 ssh waggle-dev-node-V032
 pluginctl build .
 pluginctl run --name yolo-counter \
-    registry.sagecontinuum.org/waggle/yolo-object-counter:0.2.0 \
+    registry.sagecontinuum.org/beckman/yolo-object-counter:0.3.1 \
     -- --stream bottom_camera --classes bird --continuous N
 pluginctl logs yolo-counter
 ```
