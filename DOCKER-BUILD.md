@@ -9,7 +9,7 @@
 > of tag v0.3.1 failed at exactly this step). **Deploy path remains: build
 > natively on Thor + side-load into k3s** (see below). CPU-only plugins like
 > birdnet DO build in ECR now; NVIDIA-base ones (yolo, bioclip) do not.
-> Platform blockers tracked in `~/AI-projects/Infra-problems-to-fix.md` (#2 fixed,
+> Platform blockers tracked in `~/AI-projects/sage-design-planning/Infra-problems-to-fix.md` (#2 fixed,
 > #3 open).
 
 How to build the Docker image, test it locally, and deploy it to
